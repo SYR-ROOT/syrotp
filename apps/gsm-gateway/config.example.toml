@@ -1,0 +1,37 @@
+# SYROTP GSM Gateway — example config.
+#
+# Copy to /etc/syrotp-gateway/config.toml and edit. The file should be
+# owned by the syrotp-gateway user with mode 0600 — it contains the
+# per-receiver signing key, which is enough to forge inbound SMS.
+#
+# Get the receiver values from `syrotp receivers add` on the server side.
+
+[server]
+# Public base URL of your SYROTP server. Use https in production.
+url = "http://localhost:3000"
+
+[receiver]
+# Receiver id, MSISDN (E.164), and signing key — all printed by
+#   syrotp receivers add ...
+id          = "rcv_REPLACE_ME"
+msisdn      = "+963991234567"
+signing_key = "REPLACE_ME_HEX"
+
+[modem]
+# Serial port the GSM modem is exposed on. SIM800/SIM900 USB sticks
+# typically show up as /dev/ttyUSB0..3; pick the AT-command one
+# (try `mmcli -L` if you have ModemManager installed).
+port     = "/dev/ttyUSB0"
+baudrate = 115200
+# Optional — only set if your modem reports its slot to the server.
+# sim_slot = 0
+
+[runtime]
+# SQLite queue for inbound SMS pending upload.
+queue_db_path     = "/var/lib/syrotp-gateway/queue.db"
+# How often the reader polls the modem for new SMS.
+poll_seconds      = 5.0
+# How often we POST /v1/receivers/<id>/heartbeat.
+heartbeat_seconds = 60
+# Logging: DEBUG | INFO | WARNING | ERROR
+log_level         = "INFO"

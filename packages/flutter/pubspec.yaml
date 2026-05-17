@@ -1,0 +1,29 @@
+name: syrotp_flutter
+description: Flutter widget for the Syrian Reverse OTP Protocol verification flow.
+version: 0.1.0
+homepage: https://github.com/SYR-ROOT/syrotp
+repository: https://github.com/SYR-ROOT/syrotp
+issue_tracker: https://github.com/SYR-ROOT/syrotp/issues
+documentation: https://github.com/SYR-ROOT/syrotp/blob/main/packages/flutter/README.md
+# pub.dev topics for discoverability. Max 5, lowercase, hyphens allowed.
+topics:
+  - otp
+  - sms
+  - verification
+  - syrotp
+  - reverse-otp
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.10.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  url_launcher: ^6.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0

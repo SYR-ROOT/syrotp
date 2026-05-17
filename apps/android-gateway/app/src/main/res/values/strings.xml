@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SYROTP Gateway</string>
+    <string name="status_paired">Paired</string>
+    <string name="status_unpaired">Not paired</string>
+    <string name="queue_depth_fmt">Queue depth: %1$d</string>
+    <string name="label_url">Server URL</string>
+    <string name="label_receiver">Receiver ID</string>
+    <string name="label_key">Signing key</string>
+    <string name="hint_key">Paste signing key (one-time)</string>
+    <string name="save_btn">Save &amp; pair</string>
+    <string name="unpair_btn">Unpair</string>
+    <string name="bad_url">URL must start with http(s)://</string>
+    <string name="bad_receiver">Receiver ID must start with rcv_</string>
+    <string name="bad_key">Signing key looks too short</string>
+    <string name="paired_ok">Paired successfully</string>
+</resources>

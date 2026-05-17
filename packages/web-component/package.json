@@ -1,0 +1,59 @@
+{
+  "name": "@syrotp/web-component",
+  "version": "0.1.0",
+  "description": "Framework-agnostic <syrotp-verification> custom element for the Syrian Reverse OTP Protocol",
+  "license": "MIT",
+  "author": "Muhammed Sheko (SYR-ROOT)",
+  "homepage": "https://github.com/SYR-ROOT/syrotp/tree/main/packages/web-component#readme",
+  "bugs": {
+    "url": "https://github.com/SYR-ROOT/syrotp/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SYR-ROOT/syrotp.git",
+    "directory": "packages/web-component"
+  },
+  "keywords": [
+    "syrotp",
+    "otp",
+    "sms",
+    "verification",
+    "reverse-otp",
+    "web-component",
+    "custom-element",
+    "ui",
+    "typescript"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "sideEffects": ["./dist/index.js"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "pnpm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/user-event": "^14.5.2",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

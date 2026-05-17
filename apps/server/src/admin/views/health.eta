@@ -1,0 +1,45 @@
+<h2>Health</h2>
+<div class="grid">
+  <div class="card">
+    <h3>Server</h3>
+    <div class="v">v<%= it.h.serverVersion %></div>
+    <div class="sub">running</div>
+  </div>
+  <div class="card">
+    <h3>PostgreSQL</h3>
+    <div class="v">
+      <% if (it.h.dbOk) { %>
+        <span class="pill ok">ok</span>
+      <% } else { %>
+        <span class="pill bad">down</span>
+      <% } %>
+    </div>
+    <div class="sub"><%= it.h.dbLatencyMs == null ? "—" : it.h.dbLatencyMs + "ms" %> ping</div>
+  </div>
+  <div class="card">
+    <h3>Redis</h3>
+    <div class="v">
+      <% if (it.h.redisOk) { %>
+        <span class="pill ok">ok</span>
+      <% } else { %>
+        <span class="pill bad">down</span>
+      <% } %>
+    </div>
+    <div class="sub"><%= it.h.redisLatencyMs == null ? "—" : it.h.redisLatencyMs + "ms" %> ping</div>
+  </div>
+  <div class="card">
+    <h3>Receivers — healthy</h3>
+    <div class="v"><%= it.h.receivers.healthy %></div>
+    <div class="sub">heartbeat within window</div>
+  </div>
+  <div class="card">
+    <h3>Receivers — stale</h3>
+    <div class="v"><%= it.h.receivers.stale %></div>
+    <div class="sub">enabled but no fresh heartbeat</div>
+  </div>
+  <div class="card">
+    <h3>Receivers — disabled</h3>
+    <div class="v"><%= it.h.receivers.disabled %></div>
+    <div class="sub">enabled = false</div>
+  </div>
+</div>

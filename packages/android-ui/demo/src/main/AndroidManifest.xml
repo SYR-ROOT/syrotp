@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+        The demo only opens the user's existing SMS app via an Intent —
+        we do not request any SMS permissions, do not read messages, and
+        do not auto-send. The user is the one who taps "send" inside
+        their SMS app, which is the whole point of reverse-OTP.
+    -->
+    <application
+        android:label="SYROTP Demo"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.SyrotpDemo">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

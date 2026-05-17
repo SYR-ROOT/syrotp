@@ -1,0 +1,43 @@
+name: Bug report
+description: Something is wrong with SYROTP server, an SDK, or a gateway.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please **do not** include API keys, signing keys, or `.env` contents.
+        For security vulnerabilities, see SECURITY.md and email instead.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: "v0.1.0"
+    validations: { required: true }
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - server
+        - "@syrotp/sdk (JS)"
+        - android-gateway
+        - openapi.yaml
+        - docs
+        - other
+    validations: { required: true }
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal reproducer is best.
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual
+    validations: { required: true }
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / request_id
+      description: Server log lines (redacted) or the `request_id` from an error response.

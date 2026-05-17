@@ -1,0 +1,199 @@
+OROTP Core License v1.0
+=======================
+
+Copyright (c) 2026 Muhammed Sheko (known as SYR-ROOT) and OROTP
+contributors. All rights reserved.
+
+This is a SOURCE-AVAILABLE license. It is NOT an Open Source
+Initiative (OSI) approved license, and the source covered by this
+file is NOT "Open Source" in the OSI sense. The terms below grant
+generous rights for non-commercial and limited internal use, but
+reserve commercial offering of the OROTP core to the project
+founder.
+
+
+1. SCOPE
+
+  This license covers the OROTP "core" — the source-available
+  parts of the OROTP project that are not independently licensed
+  under MIT. As of this version, the core comprises:
+
+    - apps/server          (the Fastify API server, /admin
+                            dashboard, hosted verification page,
+                            webhook delivery worker, multi-receiver
+                            routing, WebAuthn backend, and any
+                            related core service code)
+    - apps/gsm-gateway     (the Python USB-modem inbound SMS
+                            gateway)
+    - any future top-level "apps/*" service component the upstream
+      project explicitly designates as core
+
+  The MIT-licensed SDKs, UI components, CLI, and examples are NOT
+  covered by this license. See LICENSE-MIT and Section 8 below.
+
+
+2. DEFINITIONS
+
+  "Software" means any source file in this repository covered by
+  this license, plus any derivative work containing a substantive
+  portion of such source.
+
+  "OROTP Core Service" means a deployment of the Software (or any
+  derivative) that performs reverse-OTP / SMS verification for
+  end users, applications, or third parties.
+
+  "Commercial Use" means any operation of an OROTP Core Service
+  where any party receives monetary or other in-kind consideration
+  in exchange for access to, hosting of, or operation of that
+  service. Examples (non-exhaustive):
+
+    - Charging end users to receive verifications.
+    - Charging developers, customers, or organizations a fee, a
+      subscription, a per-call price, or any other consideration
+      to call OROTP-backed APIs.
+    - Bundling the Software inside a paid product where the
+      verification capability is a marketed or load-bearing
+      feature.
+    - Offering an OROTP Core Service under a different brand name
+      to paying customers.
+
+  "You" means the natural person or legal entity exercising
+  rights under this license.
+
+
+3. PERMISSIONS GRANTED FREE OF CHARGE
+
+  Subject to the conditions in Section 5, You may, free of charge:
+
+  (a) Read, study, audit, and learn from the Software.
+  (b) Modify the Software for any of the uses listed in (c)–(g).
+  (c) Run the Software for personal use.
+  (d) Run the Software for educational, academic, or research use.
+  (e) Run the Software for charitable, humanitarian, or non-profit
+      use, including operating an OROTP Core Service whose end
+      users are not charged by any party for verifications and
+      where the operating organization is not paid by any third
+      party for the operation of that service.
+  (f) Run the Software inside a single organization for that
+      organization's own internal verification needs ("Internal
+      Use"), provided the verifications are not exposed as a paid
+      product, paid platform feature, or paid API to third
+      parties.
+  (g) Distribute the Software in source form, with all of the
+      terms of this license preserved.
+  (h) Submit modifications back to the upstream OROTP repository
+      as contributions.
+
+
+4. PERMISSIONS THAT REQUIRE PRIOR WRITTEN PERMISSION
+
+  Commercial resale, rebranding, paid SaaS operation, or offering
+  the core as a paid OTP/verification service requires prior
+  written permission from Muhammed Sheko — SYR-ROOT.
+
+  Without that permission, the following are prohibited:
+
+  (a) Any Commercial Use as defined in Section 2.
+  (b) Operating an OROTP Core Service under a different brand,
+      name, or logo (white-labeling).
+  (c) Removing or obscuring the founder attribution required by
+      Section 5.
+  (d) Using the marks "OROTP", "Open Reverse OTP Protocol",
+      "SYR-ROOT", or any confusingly similar designation to imply
+      official endorsement of any Commercial Use.
+
+  Reasonable requests for charitable, humanitarian, infrastructure,
+  community-driven, or research-oriented Commercial Use are likely
+  to be granted under fair, predictable terms. To request
+  permission, see Section 10.
+
+
+5. CONDITIONS THAT APPLY TO EVERY USE
+
+  Every use of the Software, whether under Section 3 or under a
+  permission granted per Section 4, MUST:
+
+  (a) Preserve all copyright and attribution notices, including
+      the founder credit:
+
+          Muhammed Sheko — SYR-ROOT
+
+      in source files, in any user-facing surface that names the
+      project, and in published documentation that describes the
+      Software.
+
+  (b) Preserve this LICENSE-OROTP-CORE file, unmodified, alongside
+      any redistribution of the Software.
+
+  (c) On request, disclose the corresponding source code (this
+      Software's source, including any modifications You have
+      applied) to any party operating against an OROTP Core
+      Service deployment You control.
+
+
+6. NO TRADEMARK LICENSE
+
+  This license does not grant rights in the names "OROTP",
+  "Open Reverse OTP Protocol", "SYR-ROOT", or in any project logos,
+  beyond what is strictly necessary to comply with the attribution
+  requirement in Section 5. All other use of those names and logos
+  requires prior written permission from Muhammed Sheko — SYR-ROOT.
+
+
+7. DISCLAIMER OF WARRANTY AND LIABILITY
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+  OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
+  NON-INFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+  HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY,
+  WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING
+  FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+  OTHER DEALINGS IN THE SOFTWARE.
+
+
+8. RELATIONSHIP TO MIT-LICENSED PARTS OF OROTP
+
+  MIT-licensed SDKs, UI components, CLI, and examples are not
+  restricted by this Core License.
+
+  The following parts of the OROTP project are released under the
+  MIT License (see LICENSE-MIT) and are unaffected by the terms of
+  this LICENSE-OROTP-CORE:
+
+    - packages/sdk-js, sdk-python, sdk-kotlin, sdk-swift,
+      sdk-php, sdk-php-laravel
+    - packages/react, web-component, android-ui, flutter,
+      swift-ui
+    - packages/cli
+    - examples/*
+
+  Application developers may use, modify, redistribute, and
+  commercialize those MIT-licensed components freely under the
+  MIT License terms — including against an OROTP Core Service
+  operated by any party (You, the upstream project, or anyone
+  else with rights under this license).
+
+  This license restricts only the operation of the OROTP core
+  itself, not the building of applications that consume it.
+
+
+9. TERMINATION
+
+  Your rights under this license terminate automatically if You
+  violate any of its terms. Upon termination, You must cease all
+  use of the Software and destroy or remove any copies in Your
+  possession or control. Termination does not affect rights
+  properly exercised before termination.
+
+  If You cure a non-willful violation within thirty (30) days of
+  becoming aware of it, Your rights are reinstated.
+
+
+10. CONTACT
+
+  Permission requests, attribution questions, and license
+  clarifications: open an issue at
+  https://github.com/SYR-ROOT/orotp/issues tagged "license", or
+  contact the project owner via the GitHub profile
+  https://github.com/SYR-ROOT.

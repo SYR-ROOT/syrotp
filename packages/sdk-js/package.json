@@ -1,0 +1,54 @@
+{
+  "name": "@syrotp/sdk",
+  "version": "0.1.0",
+  "description": "Server-side JavaScript / TypeScript SDK for the Syrian Reverse OTP Protocol",
+  "license": "MIT",
+  "author": "Muhammed Sheko (SYR-ROOT)",
+  "homepage": "https://github.com/SYR-ROOT/syrotp/tree/main/packages/sdk-js#readme",
+  "bugs": {
+    "url": "https://github.com/SYR-ROOT/syrotp/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SYR-ROOT/syrotp.git",
+    "directory": "packages/sdk-js"
+  },
+  "keywords": [
+    "syrotp",
+    "otp",
+    "sms",
+    "verification",
+    "reverse-otp",
+    "sdk",
+    "typescript"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node -e \"console.log('@syrotp/sdk: no tests yet — placeholder')\"",
+    "prepublishOnly": "pnpm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "tsx": "^4.19.1",
+    "@types/node": "^22.7.5"
+  }
+}

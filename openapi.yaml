@@ -1,0 +1,1074 @@
+openapi: 3.1.0
+info:
+  title: Syrian Reverse OTP Protocol (SYROTP)
+  version: 1.0.0
+  description: |
+    SYROTP is an open-source reverse SMS verification protocol for regions where
+    traditional outbound OTP delivery is unreliable. Instead of sending an OTP
+    to the user, the user sends a short verification message to a local
+    receiver number, and the server verifies ownership of the phone number
+    using the inbound SMS sender identity.
+
+    ## Scope of this specification
+
+    This document covers the **SDK / protocol wire contract** — every JSON
+    endpoint that an SDK, integration, or downstream consumer is expected to
+    speak directly. The following surfaces are **intentionally out of scope**
+    because they are operator-facing or end-user-facing rather than part of
+    the integration contract:
+
+      - `GET /metrics` — Prometheus exposition (text/plain). Operational.
+      - `GET /v/{id}` — server-rendered HTML page for the end user.
+      - `GET /admin/*` — operator dashboard (HTML + JSON), Basic-Auth gated.
+
+    The polling JSON for the hosted page (`GET /v/{id}/status`) **is** in
+    scope: it is a public, stable JSON contract that downstream pollers
+    (including the page's own browser code) depend on.
+
+    ## Versioning
+
+    `1.0.0` is the protocol-freeze release. The wire contract — paths,
+    request/response schemas, status codes, headers, and the set of error
+    codes — is committed: every change inside `1.x` will be additive
+    (new optional fields, new optional endpoints, new error codes that
+    SDKs already tolerate). Removing or renaming a documented surface
+    requires a protocol MAJOR bump per
+    `docs/api-contract.md#compatibility-commitment-for-v10`.
+  license:
+    name: MIT
+    identifier: MIT
+  contact:
+    name: Syrian Reverse OTP
+    url: https://github.com/SYR-ROOT/syrotp
+
+servers:
+  - url: https://otp.example.com
+    description: Production self-hosted instance
+  - url: http://localhost:3000
+    description: Local development
+
+tags:
+  - name: verifications
+    description: Start, poll, cancel verifications
+  - name: inbound
+    description: Endpoints for SMS receiver gateways
+  - name: receivers
+    description: Receiver health and management
+  - name: webhooks
+    description: Webhook endpoint CRUD (sk_live only)
+  - name: phone-bindings
+    description: Phone-binding ceremony — proves a phone can receive SMS at a
+      receiver before any verifications can be started for it.
+  - name: webauthn
+    description: WebAuthn fallback — passkey register/login (sk_live only).
+      Routes only mount when WEBAUTHN_ENABLED + RP_ID + ORIGINS are set.
+  - name: hosted
+    description: Public hosted-verification surfaces (JSON polling endpoint).
+  - name: meta
+    description: Health & metadata
+
+security:
+  - PublicKey: []
+  - SecretKey: []
+
+paths:
+  /v1/health:
+    get:
+      tags: [meta]
+      summary: Liveness probe
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /v1/verifications:
+    post:
+      tags: [verifications]
+      summary: Start a verification
+      description: |
+        Begins a reverse-OTP verification. May be called with a public key
+        (frontend, restricted) or a secret key (backend, full access).
+        Returns the receiver number to send to and the exact message body
+        the user must send.
+
+        **Phone-binding prerequisite (since v0.8):** the calling app MUST
+        already have a `verified` phone-binding row for `(app_id, phone)`
+        — see `POST /v1/phone-bindings/start`. Without one, the server
+        responds `403 phone_not_bound` with no soft / metrics-only mode.
+      security:
+        - PublicKey: []
+        - SecretKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartVerificationRequest"
+      responses:
+        "201":
+          description: Verification created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Verification"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: |
+            Phone is not bound to this app. Caller must complete the
+            phone-binding ceremony before retrying. Error `code` is
+            `phone_not_bound`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: |
+            Conflict — typically `too_many_pending` when the phone has
+            already reached `MAX_PENDING_PER_PHONE` pending verifications.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+
+  /v1/verifications/{id}:
+    get:
+      tags: [verifications]
+      summary: Get verification status
+      parameters:
+        - $ref: "#/components/parameters/VerificationId"
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Verification"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /v1/verifications/{id}/cancel:
+    post:
+      tags: [verifications]
+      summary: Cancel a pending verification
+      description: |
+        Secret-key only. A leaked public key in a browser must not be
+        able to grief pending verifications.
+      security:
+        - SecretKey: []
+      parameters:
+        - $ref: "#/components/parameters/VerificationId"
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Verification"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Verification cannot be cancelled in its current state
+            (error `code` is `not_pending`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/inbound/sms:
+    post:
+      tags: [inbound]
+      summary: Receive an inbound SMS from a gateway
+      description: |
+        Called by a registered receiver gateway. The body MUST be signed with
+        the gateway's HMAC key using the headers documented under
+        `GatewayHmacAuth`. Replays older than `INBOUND_TIMESTAMP_SKEW_SECONDS`
+        are rejected.
+
+        The matcher recognises two shapes of inbound:
+          - `VERIFY <code>` — completes a pending verification.
+          - `BIND <nonce>`  — completes a pending phone-binding ceremony.
+
+        The `kind` discriminator on a matched response indicates which
+        path resolved.
+      security:
+        - GatewayHmacAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InboundSmsRequest"
+      responses:
+        "202":
+          description: Accepted (matched or queued for matching)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InboundSmsResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: Duplicate inbound (same idempotency key)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InboundSmsResponse" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /v1/receivers/{id}/heartbeat:
+    post:
+      tags: [receivers]
+      summary: Receiver heartbeat
+      security:
+        - GatewayHmacAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, pattern: "^rcv_[A-Za-z0-9]+$" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HeartbeatRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeartbeatResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/webhooks:
+    post:
+      tags: [webhooks]
+      summary: Create a webhook endpoint
+      description: |
+        Backend-only. Returns the signing `secret` ONCE — subsequent
+        reads (`GET /v1/webhooks/{id}`) never re-emit it.
+      security:
+        - SecretKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWebhookEndpointRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookEndpointWithSecret"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    get:
+      tags: [webhooks]
+      summary: List webhook endpoints
+      security:
+        - SecretKey: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookEndpointList"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/webhooks/{id}:
+    get:
+      tags: [webhooks]
+      summary: Get a webhook endpoint
+      security:
+        - SecretKey: []
+      parameters:
+        - $ref: "#/components/parameters/WebhookEndpointId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookEndpoint"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [webhooks]
+      summary: Delete a webhook endpoint
+      description: |
+        Cascade-deletes any queued / in-flight deliveries. Past
+        `webhook_events` rows are retained as an audit trail.
+      security:
+        - SecretKey: []
+      parameters:
+        - $ref: "#/components/parameters/WebhookEndpointId"
+      responses:
+        "204":
+          description: Deleted (no body)
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/phone-bindings/start:
+    post:
+      tags: [phone-bindings]
+      summary: Start a phone-binding ceremony
+      description: |
+        Backend-only. Creates a pending `phone_binding` and returns the
+        SMS body the claimed phone must send to the chosen receiver
+        within the binding TTL. The `bind_message` and binding nonce
+        are effectively single-use bearer tokens — log discipline must
+        keep them out of structured logs.
+      security:
+        - SecretKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartPhoneBindingRequest"
+      responses:
+        "201":
+          description: Pending binding created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StartPhoneBindingResponse"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: Receiver not found (`code: not_found`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: |
+            `code: receiver_disabled` — receiver row exists but is
+            disabled; or `code: already_bound` — a `verified` binding
+            already exists for `(app, phone)`; revoke the existing
+            binding before retrying.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /v1/phone-bindings/{id}:
+    get:
+      tags: [phone-bindings]
+      summary: Get a phone binding
+      security:
+        - SecretKey: []
+      parameters:
+        - $ref: "#/components/parameters/PhoneBindingId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhoneBinding"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/phone-bindings/{id}/revoke:
+    post:
+      tags: [phone-bindings]
+      summary: Revoke a phone binding
+      description: |
+        Soft-revokes a `pending` or `verified` row. Already-revoked rows
+        are a no-op.
+      security:
+        - SecretKey: []
+      parameters:
+        - $ref: "#/components/parameters/PhoneBindingId"
+      responses:
+        "200":
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhoneBinding"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/webauthn/register/options:
+    post:
+      tags: [webauthn]
+      summary: Begin WebAuthn registration (passkey enrolment)
+      description: |
+        Backend-only. Returns a
+        [`PublicKeyCredentialCreationOptionsJSON`](https://www.w3.org/TR/webauthn-3/#dictdef-publickeycredentialcreationoptionsjson)
+        for the browser to feed to `navigator.credentials.create()`.
+        The challenge is single-use and TTL-bounded; the matching
+        `verify` call must happen within `WEBAUTHN_CHALLENGE_TTL_SECONDS`.
+
+        Routes only mount when `WEBAUTHN_ENABLED=true` and both
+        `WEBAUTHN_RP_ID` + `WEBAUTHN_ORIGINS` are set; otherwise every
+        probe under `/v1/webauthn/*` returns 404.
+      security:
+        - SecretKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebAuthnOptionsRequest"
+      responses:
+        "200":
+          description: |
+            `PublicKeyCredentialCreationOptionsJSON` as defined by the
+            W3C WebAuthn spec. Pass this object verbatim to the
+            browser.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503":
+          description: WebAuthn misconfigured (`code: webauthn_misconfigured`
+            or `webauthn_disabled`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/webauthn/register/verify:
+    post:
+      tags: [webauthn]
+      summary: Complete WebAuthn registration
+      description: |
+        Backend-only. Submits the browser's
+        [`RegistrationResponseJSON`](https://www.w3.org/TR/webauthn-3/#dictdef-registrationresponsejson)
+        for verification by `@simplewebauthn/server`. Idempotent — a
+        repeat registration of the same credential id is a no-op
+        success.
+      security:
+        - SecretKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebAuthnVerifyRequest"
+      responses:
+        "200":
+          description: Registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthnRegisterResult"
+        "400":
+          description: |
+            Validation error, missing/expired challenge
+            (`code: challenge_invalid`), or attestation rejected
+            (`code: attestation_failed`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503":
+          description: WebAuthn misconfigured.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/webauthn/login/options:
+    post:
+      tags: [webauthn]
+      summary: Begin WebAuthn login
+      description: |
+        Backend-only. Returns a
+        [`PublicKeyCredentialRequestOptionsJSON`](https://www.w3.org/TR/webauthn-3/#dictdef-publickeycredentialrequestoptionsjson)
+        for the browser to feed to `navigator.credentials.get()`.
+      security:
+        - SecretKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebAuthnOptionsRequest"
+      responses:
+        "200":
+          description: |
+            `PublicKeyCredentialRequestOptionsJSON` as defined by the
+            W3C WebAuthn spec.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503":
+          description: WebAuthn misconfigured.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/webauthn/login/verify:
+    post:
+      tags: [webauthn]
+      summary: Complete WebAuthn login
+      description: |
+        Backend-only. Submits the browser's
+        [`AuthenticationResponseJSON`](https://www.w3.org/TR/webauthn-3/#dictdef-authenticationresponsejson)
+        for verification. Sign-count enforcement and clone-replay
+        detection live inside `@simplewebauthn/server`.
+      security:
+        - SecretKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebAuthnVerifyRequest"
+      responses:
+        "200":
+          description: Verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebAuthnLoginResult"
+        "400":
+          description: |
+            Validation error, missing/expired challenge
+            (`code: challenge_invalid`), or assertion rejected
+            (`code: assertion_failed`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: No credential matches `(app, client_ref, credential id)`
+            (`code: not_found`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: WebAuthn misconfigured.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v/{id}/status:
+    get:
+      tags: [hosted]
+      summary: Hosted-page polling status
+      description: |
+        Public — no API key required. The verification id is the auth
+        token (ULID-style 128-bit; enumeration-safe). Returns the
+        leanest possible shape (`status` + a couple of timestamps)
+        because high-frequency pollers hit this. Per-IP rate-limited
+        out of the same budget that protects `GET /v1/verifications/{id}`.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/VerificationId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostedVerificationStatus"
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+components:
+  securitySchemes:
+    PublicKey:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: |
+        `Authorization: Bearer pk_live_xxx`. Public keys are restricted to
+        starting verifications and reading masked status only.
+    SecretKey:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: |
+        `Authorization: Bearer sk_live_xxx`. Backend-only secret keys can
+        read full verification details, cancel, manage webhooks, run the
+        phone-binding ceremony, and use WebAuthn fallback.
+    GatewayHmacAuth:
+      type: apiKey
+      in: header
+      name: X-SYROTP-Signature
+      description: |
+        Inbound SMS and heartbeat requests from receiver gateways MUST set:
+
+          X-SYROTP-Receiver: rcv_xxx
+          X-SYROTP-Timestamp: <unix seconds>
+          X-SYROTP-Nonce: <random 16+ bytes hex>
+          X-SYROTP-Signature: hex(HMAC_SHA256(gateway_secret,
+                              "<timestamp>.<nonce>.<sha256(body)>"))
+
+        Servers MUST reject requests with skewed timestamps and replayed
+        nonces (cached for >= INBOUND_TIMESTAMP_SKEW_SECONDS seconds).
+
+  parameters:
+    VerificationId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^vrf_[A-Za-z0-9]+$"
+    WebhookEndpointId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^whk_[A-Za-z0-9]+$"
+    PhoneBindingId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^pbn_[A-Za-z0-9]+$"
+
+  schemas:
+    Health:
+      type: object
+      required: [status, version]
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        version: { type: string }
+        uptime_seconds: { type: integer }
+
+    StartVerificationRequest:
+      type: object
+      required: [phone, purpose]
+      properties:
+        phone:
+          type: string
+          description: |
+            E.164 or local format. The server normalizes to E.164 using the
+            configured default region. Example: `0991234567` or `+963991234567`.
+          minLength: 5
+          maxLength: 20
+        purpose:
+          type: string
+          description: Free-form short label for what this verification is for.
+          minLength: 2
+          maxLength: 64
+          pattern: "^[a-zA-Z0-9_\\-:.]+$"
+        client_ref:
+          type: string
+          description: Optional opaque reference the developer can correlate later.
+          maxLength: 128
+        locale:
+          type: string
+          description: BCP-47 tag, used for hosted page rendering.
+          maxLength: 16
+        operator:
+          type: string
+          description: |
+            Optional carrier hint (for example `syriatel` or `mtn`). When
+            set, the receiver router prefers a healthy receiver whose
+            `operator` matches; if none is available it falls back to any
+            healthy receiver. Bounded character set so the value can be
+            safely surfaced in metrics/logs without escaping concerns.
+          minLength: 1
+          maxLength: 32
+          pattern: "^[a-zA-Z0-9_\\-]+$"
+
+    Verification:
+      type: object
+      required: [id, status, phone_masked, expires_at, created_at]
+      properties:
+        id: { type: string, pattern: "^vrf_[A-Za-z0-9]+$" }
+        status:
+          type: string
+          enum: [pending, verified, expired, cancelled, failed]
+        phone_masked:
+          type: string
+          description: E.164 phone with middle digits replaced by `*`.
+          example: "+96399****567"
+        send_to:
+          type: string
+          description: |
+            The receiver number the user must send the SMS to. Only present
+            on the start response while `status == pending`.
+        message:
+          type: string
+          description: |
+            The exact body the user must send. Only present on the start
+            response while `status == pending`. Matching is whitespace-trimmed
+            and case-insensitive.
+          example: "VERIFY A7K9P2"
+        client_ref:
+          type: [string, "null"]
+          description: As supplied to start; null when not provided.
+        purpose: { type: string }
+        verified_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        attempts: { type: integer, minimum: 0 }
+
+    InboundSmsRequest:
+      type: object
+      required: [from, to, body, received_at, idempotency_key]
+      properties:
+        from:
+          type: string
+          description: Sender MSISDN as reported by the carrier (any format).
+        to:
+          type: string
+          description: Receiver MSISDN that received the SMS.
+        body:
+          type: string
+          maxLength: 1600
+        received_at:
+          type: string
+          format: date-time
+        idempotency_key:
+          type: string
+          description: |
+            Stable, unique key per inbound message (typically gateway message id
+            or hash of from+to+body+received_at).
+          minLength: 8
+          maxLength: 128
+        sim_slot:
+          type: integer
+          minimum: 0
+          maximum: 7
+
+    InboundSmsResponse:
+      type: object
+      required: [accepted, matched]
+      properties:
+        accepted: { type: boolean }
+        matched: { type: boolean }
+        kind:
+          type: string
+          enum: [binding]
+          description: |
+            Discriminator present only when `matched=true` AND the inbound
+            resolved a phone-binding ceremony rather than a verification.
+            Absent on a verification match (back-compat with v0.7-and-earlier
+            consumers that only know about verification matches).
+        verification_id:
+          type: string
+          description: |
+            Present iff `matched=true` AND `kind` is absent (verification
+            match path).
+          pattern: "^vrf_[A-Za-z0-9]+$"
+        phone_binding_id:
+          type: string
+          description: |
+            Present iff `matched=true` AND `kind == "binding"`.
+          pattern: "^pbn_[A-Za-z0-9]+$"
+        reason:
+          type: string
+          enum: [no_match, expired, duplicate]
+          description: |
+            When `matched=false`, a non-leaking reason. Enum is closed —
+            the server normalizes everything else to `no_match` so SDK
+            consumers can rely on this set.
+
+    HeartbeatRequest:
+      type: object
+      required: [received_at]
+      properties:
+        received_at: { type: string, format: date-time }
+        queue_depth: { type: integer, minimum: 0 }
+        sim_signal_dbm: { type: integer }
+        battery_percent: { type: integer, minimum: 0, maximum: 100 }
+        app_version: { type: string, maxLength: 32 }
+
+    HeartbeatResponse:
+      type: object
+      required: [ok, server_time]
+      properties:
+        ok: { type: boolean }
+        server_time: { type: string, format: date-time }
+        next_heartbeat_seconds: { type: integer }
+
+    CreateWebhookEndpointRequest:
+      type: object
+      required: [url, event_types]
+      properties:
+        url:
+          type: string
+          description: |
+            Absolute http(s) URL. Userinfo (`user:pass@`) is rejected.
+          minLength: 1
+          maxLength: 2048
+        event_types:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - verification.verified
+              - verification.expired
+              - verification.cancelled
+
+    WebhookEndpoint:
+      type: object
+      required: [id, app_id, url, enabled, event_types, created_at, updated_at]
+      properties:
+        id: { type: string, pattern: "^whk_[A-Za-z0-9]+$" }
+        app_id: { type: string }
+        url: { type: string }
+        enabled: { type: boolean }
+        event_types:
+          type: array
+          items:
+            type: string
+            enum:
+              - verification.verified
+              - verification.expired
+              - verification.cancelled
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    WebhookEndpointWithSecret:
+      allOf:
+        - $ref: "#/components/schemas/WebhookEndpoint"
+        - type: object
+          required: [secret]
+          properties:
+            secret:
+              type: string
+              description: |
+                Raw signing secret. Returned ONCE on creation and never
+                re-emitted by `GET /v1/webhooks/{id}` — at-rest storage
+                is the AES-GCM-wrapped ciphertext.
+              pattern: "^whsec_[0-9a-f]{64}$"
+
+    WebhookEndpointList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/WebhookEndpoint"
+
+    StartPhoneBindingRequest:
+      type: object
+      required: [phone, receiver_id]
+      properties:
+        phone:
+          type: string
+          description: |
+            E.164 or local format. Normalised to E.164 server-side using
+            the configured default region.
+          minLength: 4
+          maxLength: 32
+        receiver_id:
+          type: string
+          pattern: "^rcv_[A-Za-z0-9]+$"
+          description: Receiver to bind against; must belong to the calling app.
+
+    StartPhoneBindingResponse:
+      type: object
+      required:
+        - binding_id
+        - phone_e164
+        - receiver_id
+        - status
+        - expires_at
+        - send_to
+        - bind_message
+      properties:
+        binding_id: { type: string, pattern: "^pbn_[A-Za-z0-9]+$" }
+        phone_e164: { type: string, description: Normalised E.164 phone. }
+        receiver_id: { type: string, pattern: "^rcv_[A-Za-z0-9]+$" }
+        status:
+          type: string
+          enum: [pending, verified, revoked]
+        expires_at: { type: string, format: date-time }
+        send_to:
+          type: string
+          description: Receiver msisdn the BIND SMS must be addressed to.
+        bind_message:
+          type: string
+          description: |
+            Exact SMS body — `BIND <nonce>`. Effectively a single-use
+            bearer token; do not log.
+          example: "BIND ABCD1234EFGH5678JKLMNPQR"
+
+    PhoneBinding:
+      type: object
+      required:
+        - id
+        - app_id
+        - receiver_id
+        - phone_e164
+        - status
+        - expires_at
+        - bound_at
+        - revoked_at
+        - created_at
+      properties:
+        id: { type: string, pattern: "^pbn_[A-Za-z0-9]+$" }
+        app_id: { type: string }
+        receiver_id: { type: string, pattern: "^rcv_[A-Za-z0-9]+$" }
+        phone_e164: { type: string }
+        status:
+          type: string
+          enum: [pending, verified, revoked]
+        expires_at: { type: string, format: date-time }
+        bound_at:
+          type: [string, "null"]
+          format: date-time
+          description: Set when the ceremony completed; null otherwise.
+        revoked_at:
+          type: [string, "null"]
+          format: date-time
+        created_at: { type: string, format: date-time }
+
+    WebAuthnOptionsRequest:
+      type: object
+      required: [client_ref]
+      properties:
+        client_ref:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: "^[a-zA-Z0-9_\\-:.]+$"
+          description: |
+            Stable, app-scoped user identifier. Used as the WebAuthn
+            user handle.
+        user_display_name:
+          type: string
+          minLength: 1
+          maxLength: 128
+
+    WebAuthnVerifyRequest:
+      type: object
+      required: [client_ref, response]
+      properties:
+        client_ref:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: "^[a-zA-Z0-9_\\-:.]+$"
+        response:
+          type: object
+          additionalProperties: true
+          description: |
+            Browser-side WebAuthn ceremony output —
+            `RegistrationResponseJSON` for register/verify or
+            `AuthenticationResponseJSON` for login/verify, per the W3C
+            WebAuthn spec. Strict parsing is performed by
+            `@simplewebauthn/server`; this layer accepts any JSON
+            object and lets the library reject malformed input.
+
+    WebAuthnRegisterResult:
+      type: object
+      required: [credential_id]
+      properties:
+        credential_id:
+          type: string
+          description: Raw base64url credential id as returned by the authenticator.
+
+    WebAuthnLoginResult:
+      type: object
+      required: [verified]
+      properties:
+        verified: { type: boolean, enum: [true] }
+
+    HostedVerificationStatus:
+      type: object
+      required: [status, expires_at, verified_at]
+      properties:
+        status:
+          type: string
+          enum: [pending, verified, expired, cancelled, failed]
+        expires_at: { type: string, format: date-time }
+        verified_at:
+          type: [string, "null"]
+          format: date-time
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: |
+                Machine-readable error code. The values currently emitted
+                by the server include (non-exhaustive — SDKs SHOULD
+                tolerate unknown codes):
+
+                  - `validation_error` (400)
+                  - `bad_body` (400)
+                  - `invalid_purpose` (400)
+                  - `invalid_phone` (400) — bubbled from phone normaliser
+                  - `phone_type_not_allowed` (400) — premium / shared-cost /
+                    non-mobile rejected by the normaliser
+                  - `challenge_invalid` (400) — WebAuthn
+                  - `attestation_failed` (400) — WebAuthn register
+                  - `assertion_failed` (400) — WebAuthn login
+                  - `unauthorized` (401)
+                  - `forbidden` (403)
+                  - `phone_not_bound` (403) — startVerification
+                  - `not_found` (404)
+                  - `not_pending` (409) — cancel
+                  - `too_many_pending` (409) — startVerification
+                  - `already_bound` (409) — phone-binding
+                  - `receiver_disabled` (409) — phone-binding
+                  - `rate_limited` (429)
+                  - `internal_error` (500)
+                  - `no_receiver` (503)
+                  - `webauthn_disabled` (503)
+                  - `webauthn_misconfigured` (503)
+            message: { type: string }
+            request_id: { type: string }
+            details:
+              type: object
+              additionalProperties: true
+              description: |
+                Optional context. Validation errors carry `issues` (a
+                Zod issue list); rate-limit errors carry
+                `retry_after` (seconds).
+
+  responses:
+    BadRequest:
+      description: Validation error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    RateLimited:
+      description: |
+        Too many requests. The error `details.retry_after` carries the
+        backoff in seconds.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ServiceUnavailable:
+      description: No healthy receiver available
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }

@@ -1,0 +1,41 @@
+node_modules/
+dist/
+build/
+out/
+*.log
+.env
+.env.local
+.env.*.local
+!.env.example
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+coverage/
+.nyc_output/
+.pnpm-store/
+.turbo/
+
+# Android
+android-gateway/.gradle/
+android-gateway/local.properties
+android-gateway/**/build/
+*.apk
+*.aab
+*.keystore
+!debug.keystore
+
+# Generated
+generated/
+*.tsbuildinfo
+
+# Load test outputs
+tools/loadtest/reports/*
+!tools/loadtest/reports/.gitkeep
+
+# Local docker port overrides — per-developer, not part of the release
+docker-compose.override.yml
+
+# Local AI assistant state
+.claude/

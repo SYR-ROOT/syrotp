@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SYROTP — Web Component example</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        max-width: 640px;
+        margin: 24px auto;
+        padding: 0 16px;
+        color: #111827;
+      }
+      h1 { font-size: 22px; }
+      p { color: #4b5563; line-height: 1.5; }
+      code { background: #f3f4f6; padding: 0 4px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <h1>SYROTP — Web Component example</h1>
+    <p>
+      In production your backend calls
+      <code>syrotpClient.startVerification(...)</code> via the secret SDK and
+      forwards the full result to your frontend. This example uses a hardcoded
+      <code>verification</code> so you can see the UI; status polling is a
+      no-op against <code>http://localhost:3000</code> unless an SYROTP server
+      is also running there.
+    </p>
+    <syrotp-verification id="demo" base-url="http://localhost:3000"></syrotp-verification>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

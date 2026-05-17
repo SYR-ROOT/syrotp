@@ -1,0 +1,22 @@
+{
+  "name": "@syrotp/loadtest",
+  "version": "0.1.1",
+  "private": true,
+  "description": "Load & reliability tooling for SYROTP. Black-box scenarios + acceptance gating.",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.36.0",
+    "postgres": "^3.4.5",
+    "ulid": "^2.3.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3",
+    "@types/node": "^22.7.5"
+  }
+}

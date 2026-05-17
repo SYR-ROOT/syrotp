@@ -1,0 +1,39 @@
+<h2>Inbound SMS <span class="muted" style="font-weight:400; font-size: 13px;">(latest <%= it.rows.length %>)</span></h2>
+<p class="muted" style="margin-top: 0; margin-bottom: 16px;">
+  Bodies are intentionally truncated. The dashboard never displays full
+  SMS contents — query <span class="mono">inbound_sms</span> in psql with
+  audit justification if you need the full body.
+</p>
+<% if (it.rows.length === 0) { %>
+  <p class="muted">No inbound SMS yet.</p>
+<% } else { %>
+<table>
+  <thead>
+    <tr>
+      <th>received</th>
+      <th>from (masked)</th>
+      <th>receiver</th>
+      <th>matched verification</th>
+      <th>body (verb + length)</th>
+    </tr>
+  </thead>
+  <tbody>
+  <% it.rows.forEach((r) => { %>
+    <tr>
+      <td><%= it.relativeTime(r.receivedAt) %></td>
+      <td class="mono"><%= it.maskPhone(r.fromE164) %></td>
+      <td class="mono"><%= it.shortId(r.receiverId) %></td>
+      <td>
+        <% if (r.matchedVerificationId) { %>
+          <span class="pill ok">matched</span>
+          <span class="mono muted"><%= it.shortId(r.matchedVerificationId) %></span>
+        <% } else { %>
+          <span class="pill muted">no match</span>
+        <% } %>
+      </td>
+      <td class="mono"><%= it.maskInboundBody(r.body) %></td>
+    </tr>
+  <% }); %>
+  </tbody>
+</table>
+<% } %>

@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>SYROTP Demo</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0b0d12;
+        --panel: #141821;
+        --fg: #e6e8ee;
+        --muted: #8a93a6;
+        --accent: #6ea8fe;
+        --good: #2ec27e;
+        --bad: #e25f5f;
+        --warn: #e6a23c;
+        --border: #232938;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans Arabic", sans-serif; }
+      .wrap { max-width: 520px; margin: 6vh auto; padding: 24px; }
+      h1 { margin: 0 0 4px; font-size: 22px; }
+      p.lead { margin: 0 0 24px; color: var(--muted); }
+      .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+      label { display: block; font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
+      input, button { font: inherit; color: inherit; }
+      input { width: 100%; background: #0f131b; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+      input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+      button { background: var(--accent); color: #0b0d12; border: none; border-radius: 8px; padding: 10px 14px; font-weight: 600; cursor: pointer; }
+      button[disabled] { opacity: 0.5; cursor: not-allowed; }
+      button.secondary { background: transparent; color: var(--fg); border: 1px solid var(--border); }
+      .row { display: flex; gap: 8px; align-items: center; }
+      .stack { display: grid; gap: 8px; }
+      .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); }
+      .pill.good { color: var(--good); border-color: var(--good); }
+      .pill.bad { color: var(--bad); border-color: var(--bad); }
+      .pill.warn { color: var(--warn); border-color: var(--warn); }
+      .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+      .msgbox { background: #0f131b; border: 1px dashed var(--accent); border-radius: 8px; padding: 12px; margin: 12px 0; }
+      .msg { font-size: 20px; letter-spacing: 1px; }
+      .hint { font-size: 13px; color: var(--muted); }
+      hr { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>SYROTP Demo</h1>
+      <p class="lead">تحقق من رقم الهاتف عبر إرسال رسالة قصيرة من المستخدم.</p>
+
+      <div class="card">
+        <div id="setup" class="stack">
+          <label for="baseUrl">Base URL</label>
+          <input id="baseUrl" value="http://localhost:3000" autocomplete="off" spellcheck="false" />
+
+          <label for="apiKey">Public API Key</label>
+          <input id="apiKey" placeholder="pk_live_xxx" autocomplete="off" spellcheck="false" type="password" />
+
+          <label for="phone">رقم الهاتف</label>
+          <input id="phone" placeholder="0991234567" inputmode="tel" autocomplete="tel" />
+
+          <div class="row" style="margin-top: 12px;">
+            <button id="startBtn">بدء التحقق</button>
+            <span id="status" class="hint"></span>
+          </div>
+        </div>
+
+        <div id="active" hidden>
+          <hr />
+          <p>
+            <span class="pill" id="statePill">pending</span>
+            <span class="hint" id="meta"></span>
+          </p>
+
+          <p class="hint">أرسل الرسالة التالية إلى الرقم أدناه من الهاتف الذي تريد التحقق منه:</p>
+          <div class="msgbox">
+            <div class="hint">إلى</div>
+            <div class="mono" id="sendTo"></div>
+          </div>
+          <div class="msgbox">
+            <div class="hint">نص الرسالة</div>
+            <div class="mono msg" id="message"></div>
+          </div>
+
+          <div class="row">
+            <button id="copyBtn" class="secondary" type="button">نسخ النص</button>
+            <button id="cancelBtn" class="secondary" type="button">إلغاء</button>
+            <span id="countdown" class="hint"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      // The demo uses fetch directly so it works without bundling.
+      // For real apps, install `@syrotp/sdk` instead.
+      const $ = (id) => document.getElementById(id);
+      const setup = $("setup");
+      const active = $("active");
+
+      const setStatus = (txt, kind = "") => {
+        const el = $("status");
+        el.textContent = txt;
+        el.className = "hint";
+        if (kind) el.classList.add(kind);
+      };
+
+      const setPill = (status) => {
+        const el = $("statePill");
+        el.textContent = status;
+        el.className = "pill";
+        if (status === "verified") el.classList.add("good");
+        else if (status === "expired" || status === "cancelled" || status === "failed") el.classList.add("bad");
+        else el.classList.add("warn");
+      };
+
+      let pollTimer = null;
+      let countdownTimer = null;
+      let currentId = null;
+      let baseUrl = "";
+      let apiKey = "";
+
+      async function api(method, path, body) {
+        const res = await fetch(baseUrl.replace(/\/+$/, "") + path, {
+          method,
+          headers: {
+            Authorization: "Bearer " + apiKey,
+            ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+          },
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+        });
+        const text = await res.text();
+        const json = text ? JSON.parse(text) : {};
+        if (!res.ok) {
+          const code = json?.error?.code ?? `http_${res.status}`;
+          const msg = json?.error?.message ?? "request failed";
+          throw new Error(`[${code}] ${msg}`);
+        }
+        return json;
+      }
+
+      function startCountdown(expiresAtIso) {
+        clearInterval(countdownTimer);
+        const expires = new Date(expiresAtIso).getTime();
+        const tick = () => {
+          const left = Math.max(0, Math.floor((expires - Date.now()) / 1000));
+          $("countdown").textContent = left > 0 ? `ينتهي خلال ${left} ثانية` : "انتهت الصلاحية";
+          if (left <= 0) clearInterval(countdownTimer);
+        };
+        tick();
+        countdownTimer = setInterval(tick, 1000);
+      }
+
+      function startPolling(id) {
+        clearInterval(pollTimer);
+        pollTimer = setInterval(async () => {
+          try {
+            const v = await api("GET", `/v1/verifications/${encodeURIComponent(id)}`);
+            setPill(v.status);
+            if (v.status !== "pending") {
+              clearInterval(pollTimer);
+              clearInterval(countdownTimer);
+            }
+          } catch (e) {
+            setStatus(String(e.message || e));
+          }
+        }, 2500);
+      }
+
+      $("startBtn").addEventListener("click", async () => {
+        baseUrl = $("baseUrl").value.trim();
+        apiKey = $("apiKey").value.trim();
+        const phone = $("phone").value.trim();
+        if (!baseUrl || !apiKey || !phone) {
+          setStatus("املأ جميع الحقول");
+          return;
+        }
+        $("startBtn").disabled = true;
+        setStatus("...");
+
+        try {
+          const v = await api("POST", "/v1/verifications", {
+            phone,
+            purpose: "demo",
+            client_ref: "web-demo",
+          });
+          currentId = v.id;
+          $("sendTo").textContent = v.send_to;
+          $("message").textContent = v.message;
+          $("meta").textContent = `id: ${v.id}  ·  ${v.phone_masked}`;
+          setPill("pending");
+          startCountdown(v.expires_at);
+          startPolling(v.id);
+          setup.hidden = true;
+          active.hidden = false;
+          setStatus("");
+        } catch (e) {
+          setStatus(String(e.message || e), "bad");
+        } finally {
+          $("startBtn").disabled = false;
+        }
+      });
+
+      $("copyBtn").addEventListener("click", async () => {
+        const txt = $("message").textContent || "";
+        try {
+          await navigator.clipboard.writeText(txt);
+          setStatus("تم النسخ");
+        } catch {
+          setStatus("تعذر النسخ");
+        }
+      });
+
+      $("cancelBtn").addEventListener("click", async () => {
+        if (!currentId) return;
+        try {
+          const v = await api("POST", `/v1/verifications/${encodeURIComponent(currentId)}/cancel`);
+          setPill(v.status);
+          clearInterval(pollTimer);
+          clearInterval(countdownTimer);
+        } catch (e) {
+          setStatus(String(e.message || e), "bad");
+        }
+      });
+    </script>
+  </body>
+</html>

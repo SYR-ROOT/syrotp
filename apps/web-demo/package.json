@@ -1,0 +1,8 @@
+{
+  "name": "@syrotp/web-demo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "npx --yes serve -l 5173 ."
+  }
+}

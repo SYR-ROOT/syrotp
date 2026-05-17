@@ -1,0 +1,43 @@
+{
+    "name": "syrotp/sdk",
+    "description": "Official PHP SDK for the Syrian Reverse OTP Protocol (SYROTP). Sync client, typed errors, retry policy matched to the cross-language SDK contract.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["otp", "sms", "verification", "syrotp", "reverse-otp", "sdk"],
+    "homepage": "https://github.com/SYR-ROOT/syrotp",
+    "authors": [
+        {
+            "name": "Muhammed Sheko (SYR-ROOT)",
+            "homepage": "https://github.com/SYR-ROOT"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/SYR-ROOT/syrotp/issues",
+        "source": "https://github.com/SYR-ROOT/syrotp/tree/main/packages/sdk-php",
+        "docs": "https://github.com/SYR-ROOT/syrotp/blob/main/docs/sdk-contract.md"
+    },
+    "require": {
+        "php": "^8.2",
+        "ext-curl": "*",
+        "ext-json": "*",
+        "guzzlehttp/guzzle": "^7.5",
+        "psr/log": "^3.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Syrotp\\Sdk\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Syrotp\\Sdk\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable"
+}

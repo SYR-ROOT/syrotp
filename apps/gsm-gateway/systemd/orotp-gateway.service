@@ -1,0 +1,52 @@
+[Unit]
+Description=OROTP GSM Modem Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=orotp-gateway
+Group=orotp-gateway
+ExecStart=/opt/orotp-gateway/venv/bin/orotp-gateway --config /etc/orotp-gateway/config.toml
+Restart=always
+RestartSec=5
+
+# Modem access — adjust to whichever group owns /dev/ttyUSB*. Most
+# distros use `dialout`; some (Arch) use `uucp`.
+SupplementaryGroups=dialout
+
+# Persistent on-disk queue lives here. systemd creates the dir at start
+# with the right ownership.
+StateDirectory=orotp-gateway
+StateDirectoryMode=0750
+
+# Hardening — the gateway only needs serial + network, nothing else.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/orotp-gateway
+PrivateTmp=yes
+PrivateDevices=no
+DeviceAllow=/dev/ttyUSB0 rw
+DeviceAllow=/dev/ttyUSB1 rw
+DeviceAllow=/dev/ttyUSB2 rw
+DeviceAllow=/dev/ttyUSB3 rw
+DeviceAllow=/dev/ttyACM0 rw
+DeviceAllow=/dev/ttyACM1 rw
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# journald output.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,28 @@
+<h2>Overview</h2>
+<div class="grid">
+  <div class="card">
+    <h3>Receivers</h3>
+    <div class="v"><%= it.overview.receiverCounts.healthy %> / <%= it.overview.receiverCounts.total %></div>
+    <div class="sub">healthy / total · <%= it.overview.receiverCounts.enabled %> enabled</div>
+  </div>
+  <div class="card">
+    <h3>Pending verifications</h3>
+    <div class="v"><%= it.overview.pendingVerifications %></div>
+    <div class="sub">awaiting inbound SMS</div>
+  </div>
+  <div class="card">
+    <h3>Verified — last 24h</h3>
+    <div class="v"><%= it.overview.verifiedLast24h %></div>
+    <div class="sub">successful end-to-end</div>
+  </div>
+  <div class="card">
+    <h3>Inbound SMS — last 24h</h3>
+    <div class="v"><%= it.overview.inboundLast24h %></div>
+    <div class="sub">total accepted</div>
+  </div>
+  <div class="card">
+    <h3>Unmatched — last 24h</h3>
+    <div class="v"><%= it.overview.unmatchedLast24h %></div>
+    <div class="sub">no pending verification matched</div>
+  </div>
+</div>

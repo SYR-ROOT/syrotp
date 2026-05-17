@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="referrer" content="no-referrer" />
+<meta name="robots" content="noindex,nofollow" />
+<title><%= it.title %> — OROTP admin</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #0b0d12;
+    --panel: #141821;
+    --fg: #e6e8ee;
+    --muted: #8a93a6;
+    --accent: #6ea8fe;
+    --good: #2ec27e;
+    --warn: #e6a23c;
+    --bad: #e25f5f;
+    --border: #232938;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  header { background: var(--panel); border-bottom: 1px solid var(--border); padding: 12px 24px; }
+  header nav { display: flex; gap: 18px; align-items: baseline; }
+  header h1 { font-size: 16px; margin: 0; margin-right: 12px; }
+  header nav a { font-size: 13px; }
+  header nav a.active { color: var(--fg); font-weight: 600; }
+  main { padding: 24px; max-width: 1200px; margin: 0 auto; }
+  h2 { font-size: 18px; margin: 0 0 16px; }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+  .card h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--muted); margin: 0 0 6px; font-weight: 500; }
+  .card .v { font-size: 24px; font-weight: 600; }
+  .card .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  th { background: rgba(255,255,255,0.02); font-size: 12px; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--muted); font-weight: 500; }
+  tr:last-child td { border-bottom: none; }
+  td.mono, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px;
+    border: 1px solid var(--border); }
+  .pill.ok      { color: var(--good); border-color: var(--good); }
+  .pill.warn    { color: var(--warn); border-color: var(--warn); }
+  .pill.bad     { color: var(--bad); border-color: var(--bad); }
+  .pill.muted   { color: var(--muted); }
+  .muted { color: var(--muted); }
+  footer { color: var(--muted); font-size: 12px; padding: 24px; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <nav>
+    <h1>OROTP admin</h1>
+    <a href="/admin" class="<%= it.active === 'dashboard' ? 'active' : '' %>">overview</a>
+    <a href="/admin/receivers" class="<%= it.active === 'receivers' ? 'active' : '' %>">receivers</a>
+    <a href="/admin/verifications" class="<%= it.active === 'verifications' ? 'active' : '' %>">verifications</a>
+    <a href="/admin/inbound-sms" class="<%= it.active === 'inbound-sms' ? 'active' : '' %>">inbound SMS</a>
+    <a href="/admin/health" class="<%= it.active === 'health' ? 'active' : '' %>">health</a>
+  </nav>
+</header>
+<main>
+<%~ it.body %>
+</main>
+<footer>
+  read-only · server v<%= it.version %> · last refresh: <%= it.now %>
+</footer>
+</body>
+</html>

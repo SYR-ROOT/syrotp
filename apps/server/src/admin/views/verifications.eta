@@ -1,0 +1,39 @@
+<h2>Verifications <span class="muted" style="font-weight:400; font-size: 13px;">(latest <%= it.rows.length %>)</span></h2>
+<% if (it.rows.length === 0) { %>
+  <p class="muted">No verifications yet.</p>
+<% } else { %>
+<table>
+  <thead>
+    <tr>
+      <th>id</th>
+      <th>phone (masked)</th>
+      <th>purpose</th>
+      <th>status</th>
+      <th>created</th>
+      <th>expires</th>
+      <th>verified</th>
+    </tr>
+  </thead>
+  <tbody>
+  <% it.rows.forEach((v) => { %>
+    <tr>
+      <td class="mono"><%= it.shortId(v.id) %></td>
+      <td class="mono"><%= it.maskPhone(v.phoneE164) %></td>
+      <td><%= v.purpose %></td>
+      <td>
+        <% if (v.status === "verified") { %>
+          <span class="pill ok">verified</span>
+        <% } else if (v.status === "pending") { %>
+          <span class="pill warn">pending</span>
+        <% } else { %>
+          <span class="pill muted"><%= v.status %></span>
+        <% } %>
+      </td>
+      <td><%= it.relativeTime(v.createdAt) %></td>
+      <td><%= it.relativeTime(v.expiresAt) %></td>
+      <td><%= v.verifiedAt ? it.relativeTime(v.verifiedAt) : "—" %></td>
+    </tr>
+  <% }); %>
+  </tbody>
+</table>
+<% } %>

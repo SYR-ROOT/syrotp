@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Force TLS for all production traffic. To allow plaintext for local
+         development against http://10.0.2.2:3000 (emulator) or a LAN IP,
+         add a <domain-config cleartextTrafficPermitted="true"> block here
+         for that specific host only. Never enable cleartext globally. -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

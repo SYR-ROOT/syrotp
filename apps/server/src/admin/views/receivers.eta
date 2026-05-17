@@ -1,0 +1,37 @@
+<h2>Receivers <span class="muted" style="font-weight:400; font-size: 13px;">(latest <%= it.rows.length %>)</span></h2>
+<% if (it.rows.length === 0) { %>
+  <p class="muted">No receivers yet. Run <span class="mono">orotp bootstrap</span> or <span class="mono">orotp receiver add</span>.</p>
+<% } else { %>
+<table>
+  <thead>
+    <tr>
+      <th>id</th>
+      <th>name</th>
+      <th>operator</th>
+      <th>msisdn (masked)</th>
+      <th>state</th>
+      <th>last heartbeat</th>
+    </tr>
+  </thead>
+  <tbody>
+  <% it.rows.forEach((r) => { %>
+    <tr>
+      <td class="mono"><%= it.shortId(r.id) %></td>
+      <td><%= r.name %></td>
+      <td><%= r.operator || "—" %></td>
+      <td class="mono"><%= it.maskPhone(r.msisdn) %></td>
+      <td>
+        <% if (!r.enabled) { %>
+          <span class="pill bad">disabled</span>
+        <% } else if (r.healthy) { %>
+          <span class="pill ok">healthy</span>
+        <% } else { %>
+          <span class="pill warn">stale</span>
+        <% } %>
+      </td>
+      <td><%= it.relativeTime(r.lastHeartbeatAt) %></td>
+    </tr>
+  <% }); %>
+  </tbody>
+</table>
+<% } %>

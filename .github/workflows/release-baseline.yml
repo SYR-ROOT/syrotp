@@ -1,0 +1,115 @@
+name: Release baseline
+
+# The full load suite. Costs ~2-3 minutes and produces the artifacts that
+# back the numbers we publish in CHANGELOG / docs/performance.md. Not run
+# on every push — we trigger it:
+#   - manually before tagging (workflow_dispatch)
+#   - automatically when a release tag is pushed
+on:
+  workflow_dispatch:
+    inputs:
+      continue_on_fail:
+        description: "Run all steps even if one fails"
+        type: boolean
+        default: false
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: syrotp
+          POSTGRES_PASSWORD: syrotp_dev_password
+          POSTGRES_DB: syrotp
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U syrotp"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://syrotp:syrotp_dev_password@localhost:5432/syrotp
+      REDIS_URL: redis://localhost:6379/0
+      MASTER_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      COOKIE_SECRET: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210
+      SYROTP_BASE_URL: http://127.0.0.1:3000
+      PORT: 3000
+      HOST: 127.0.0.1
+      # The load tool runs from a single IP — production-realistic per-IP
+      # caps would falsely cap throughput. Real deployments keep
+      # .env.example defaults (10/60/120). See docs/performance.md.
+      RATE_LIMIT_START_PER_IP_PER_MIN: 50000
+      RATE_LIMIT_STATUS_PER_IP_PER_MIN: 50000
+      RATE_LIMIT_INBOUND_PER_RECEIVER_PER_MIN: 50000
+      # v0.8 PR #38 per-app buckets — same override for the
+      # release-baseline runner since one app generates all the
+      # synthetic traffic.
+      RATE_LIMIT_VERIFICATIONS_PER_APP_PER_MIN: 50000
+      RATE_LIMIT_INBOUND_PER_APP_PER_MIN: 50000
+      RATE_LIMIT_BINDINGS_PER_APP_PER_MIN: 50000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm version is read from `packageManager` in root package.json.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile=false
+
+      - name: build server
+        run: pnpm --filter @syrotp/server build
+
+      - name: migrate
+        run: node apps/server/dist/db/migrate.js
+
+      - name: start server
+        run: |
+          node apps/server/dist/index.js &
+          for i in {1..30}; do
+            curl -sf http://127.0.0.1:3000/v1/health && break
+            sleep 1
+          done
+
+      - name: run release-baseline suite
+        run: |
+          set -e
+          # CI hardware tends to be ~2x slower than dev — relax p95 targets
+          # to avoid flaky failures while still catching real regressions.
+          if [ "${{ inputs.continue_on_fail }}" = "true" ]; then
+            pnpm --filter @syrotp/loadtest start suite release-baseline \
+              --p95-start 500 --p95-inbound 500 --p95-status 500 \
+              --continue-on-fail
+          else
+            pnpm --filter @syrotp/loadtest start suite release-baseline \
+              --p95-start 500 --p95-inbound 500 --p95-status 500
+          fi
+
+      - name: upload baseline reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-baseline-reports
+          path: tools/loadtest/reports/
+          if-no-files-found: error
+          retention-days: 90

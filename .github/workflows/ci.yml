@@ -1,0 +1,738 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ----- TypeScript build + unit tests (no infra) -----
+  build:
+    name: build & unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm version is read from `packageManager` in root package.json.
+      # Don't set `version:` here — the action errors with
+      # ERR_PNPM_BAD_PM_VERSION when both sources are specified.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile=false
+
+      # build before typecheck — cross-package type imports
+      # (@syrotp/cli → @syrotp/server/admin) resolve through `exports` to
+      # dist/, so dist/ has to exist before tsc runs.
+      - name: build
+        run: pnpm build
+
+      - name: typecheck
+        run: pnpm typecheck
+
+      - name: unit tests
+        run: pnpm test
+
+  # ----- pub.dev publish dry-run for the Flutter widget -----
+  # Runs `flutter pub publish --dry-run` which performs the full
+  # publish-time validation (manifest, README rendering, LICENSE
+  # presence, CHANGELOG presence, license-classifier conformance,
+  # archive size limits) WITHOUT actually publishing. Real
+  # publishing requires `SYROTP_PUBDEV_AUTHJSON` — NOT in this PR.
+  flutter-publish-dry-run:
+    name: flutter publish dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: flutter pub get
+        working-directory: packages/flutter
+        run: flutter pub get
+      - name: flutter pub publish --dry-run
+        working-directory: packages/flutter
+        run: flutter pub publish --dry-run
+
+  # ----- Swift Package Manager publish dry-run for both Swift packages -----
+  # Apple's Swift Package Registry uses git tags directly — there's
+  # no upload step. `swift package describe` parses Package.swift
+  # and resolves dependencies. Runs on macos-14 because swift-ui
+  # imports SwiftUI (which doesn't compile on Linux); sdk-swift
+  # could run on Linux but we keep both on macOS for consistency.
+  swift-publish-dry-run:
+    name: swift publish dry-run
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift version
+        run: swift --version
+      - name: swift package describe (sdk-swift)
+        working-directory: packages/sdk-swift
+        run: swift package describe
+      - name: swift package describe (swift-ui)
+        working-directory: packages/swift-ui
+        run: swift package describe
+
+  # ----- Maven Central publish dry-run for the Kotlin SDK + Android UI -----
+  # Stages each gradle module into the local Maven repo
+  # (`~/.m2/repository`) via `publishToMavenLocal`. Validates the POM
+  # (groupId, artifactId, version, license, scm, developers,
+  # issue-management) and the actual artifact build for each. Real
+  # Sonatype publishing needs a GPG signing key + Sonatype creds —
+  # NOT in this PR.
+  maven-dry-run:
+    name: maven dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v3
+      - name: publishToMavenLocal sdk-kotlin
+        working-directory: packages/sdk-kotlin
+        run: gradle publishToMavenLocal --no-daemon
+      - name: publishToMavenLocal android-ui :library
+        working-directory: packages/android-ui
+        run: gradle :library:publishToMavenLocal --no-daemon
+
+  # ----- Packagist publish dry-run for the PHP SDK + Laravel helper -----
+  # Packagist mirrors GitHub — no upload step. Validation is purely
+  # `composer.json` metadata + a clean install. Catches missing
+  # fields (license, support URLs, autoload), the `version`-field
+  # warning that --strict treats as an error, and breakage in the
+  # local path-repo wiring between sdk-php-laravel and sdk-php.
+  packagist-dry-run:
+    name: packagist dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          coverage: none
+          extensions: curl, json, mbstring
+      - name: validate syrotp/sdk
+        working-directory: packages/sdk-php
+        run: composer validate --strict --no-check-lock --no-check-publish
+      - name: install syrotp/sdk (no-dev)
+        working-directory: packages/sdk-php
+        run: composer install --no-dev --prefer-dist --no-interaction --no-progress
+      - name: validate syrotp/laravel
+        working-directory: packages/sdk-php-laravel
+        run: composer validate --strict --no-check-lock --no-check-publish
+      - name: install syrotp/laravel (no-dev, resolves syrotp/sdk via local path repo)
+        working-directory: packages/sdk-php-laravel
+        run: composer install --no-dev --prefer-dist --no-interaction --no-progress
+
+  # ----- PyPI publish dry-run for the Python SDK -----
+  # Validates pyproject.toml metadata + builds the wheel and sdist
+  # without touching PyPI. Catches missing fields (URLs, license,
+  # readme rendering), missing LICENSE in the wheel/sdist, and PEP
+  # 639 license-expression / license-classifier conflicts before a
+  # tag goes out. Real publishing is gated separately.
+  pypi-dry-run:
+    name: pypi dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install build tooling
+        run: pip install --upgrade build twine
+      - name: build wheel + sdist
+        working-directory: packages/sdk-python
+        run: python -m build
+      - name: twine check
+        working-directory: packages/sdk-python
+        run: twine check dist/*
+
+  # ----- npm publish dry-run for the JS publishables -----
+  # Validates package.json metadata + tarball contents for each
+  # publishable npm package without touching the registry. Catches
+  # missing fields (repository / homepage / license / files), missing
+  # LICENSE in the tarball, or accidentally-included sources before a
+  # tag goes out. Real publishing is gated separately — this job is
+  # the pre-flight check that runs on every PR + push to main.
+  npm-dry-run:
+    name: npm dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - name: build
+        run: pnpm build
+      - name: dry-run @syrotp/sdk
+        working-directory: packages/sdk-js
+        run: pnpm publish --dry-run --no-git-checks
+      - name: dry-run @syrotp/react
+        working-directory: packages/react
+        run: pnpm publish --dry-run --no-git-checks
+      - name: dry-run @syrotp/web-component
+        working-directory: packages/web-component
+        run: pnpm publish --dry-run --no-git-checks
+
+  # ----- Python GSM gateway — unit tests (no modem, no server) -----
+  gsm-gateway:
+    name: gsm gateway tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: apps/gsm-gateway/pyproject.toml
+      - name: install gateway with dev deps
+        working-directory: apps/gsm-gateway
+        run: pip install -e ".[dev]"
+      - name: pytest
+        working-directory: apps/gsm-gateway
+        run: pytest -v
+
+  # ----- Python SDK — unit tests (mocked HTTP, no server needed) -----
+  sdk-python:
+    name: python sdk tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: packages/sdk-python/pyproject.toml
+      - name: install sdk with dev deps
+        working-directory: packages/sdk-python
+        run: pip install -e ".[dev]"
+      - name: pytest
+        working-directory: packages/sdk-python
+        run: pytest -v
+
+  # ----- Kotlin/JVM SDK — unit tests (MockWebServer, no real network) -----
+  sdk-kotlin:
+    name: kotlin sdk tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v3
+      - name: gradle test
+        working-directory: packages/sdk-kotlin
+        run: gradle test --no-daemon
+
+  # ----- Android UI — controller unit tests + library AAR + demo APK -----
+  # JVM unit tests for the controller (no Android SDK calls — pure
+  # Kotlin + OkHttp + MockWebServer). Compose UI tests are intentionally
+  # out of scope for v0.6 PR 3 — they need Robolectric/instrumented
+  # tests and add ~5 min to every CI run for marginal value.
+  android-ui:
+    name: android ui tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v3
+      - name: gradle test + assemble
+        working-directory: packages/android-ui
+        run: gradle :library:testDebugUnitTest :library:assembleRelease :demo:assembleDebug --no-daemon
+
+  # ----- SwiftUI verification component — controller + sms-intent tests -----
+  # macOS-only (SwiftUI doesn't compile on Linux). XCTest under
+  # `swift test` runs the controller (URLProtocol-mocked) and the
+  # SMS-intent helper. SwiftUI view tests are intentionally out of
+  # scope — they need ViewInspector or snapshot testing and add
+  # CI minutes for marginal value while the view is this small.
+  swift-ui:
+    name: swift ui tests
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift version
+        run: swift --version
+      - name: swift test
+        working-directory: packages/swift-ui
+        run: swift test
+
+  # ----- Flutter UI — controller + sms-intent + widget render tests -----
+  # `flutter test` runs the unit/widget tests headlessly via the
+  # Flutter test renderer; no emulator or device needed. The example
+  # is analyzed but not built — the example only ships source files
+  # (no platform scaffolding) by design, so `flutter analyze` is the
+  # right gate.
+  flutter-ui:
+    name: flutter ui tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: flutter pub get (package)
+        working-directory: packages/flutter
+        run: flutter pub get
+      - name: flutter analyze (package)
+        working-directory: packages/flutter
+        run: flutter analyze
+      - name: flutter test
+        working-directory: packages/flutter
+        run: flutter test
+      - name: flutter pub get (example)
+        working-directory: packages/flutter/example
+        run: flutter pub get
+      - name: flutter analyze (example)
+        working-directory: packages/flutter/example
+        run: flutter analyze
+
+  # ----- Swift SDK — unit tests on macOS (URLProtocol mocked) -----
+  sdk-swift:
+    name: swift sdk tests
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift version
+        run: swift --version
+      - name: swift test
+        working-directory: packages/sdk-swift
+        run: swift test
+
+  # ----- PHP SDK — unit tests (Guzzle MockHandler, no real network) -----
+  sdk-php:
+    name: php sdk tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php-version: ["8.2", "8.3"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          coverage: none
+          extensions: curl, json, mbstring
+      - name: composer install
+        working-directory: packages/sdk-php
+        run: composer install --no-interaction --no-progress --prefer-dist
+      - name: phpunit
+        working-directory: packages/sdk-php
+        run: vendor/bin/phpunit
+
+  # ----- PHP SDK Laravel integration — Testbench across Laravel 11/12 -----
+  # Pulls the local ../sdk-php via a Composer path repo so the Laravel
+  # package always tests against the in-tree SDK source.
+  sdk-php-laravel:
+    name: php sdk laravel tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - php: "8.2"
+            laravel: "11"
+            testbench: "9"
+          - php: "8.2"
+            laravel: "12"
+            testbench: "10"
+          - php: "8.3"
+            laravel: "11"
+            testbench: "9"
+          - php: "8.3"
+            laravel: "12"
+            testbench: "10"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          extensions: curl, json, mbstring
+      - name: composer update (pinning Laravel + testbench)
+        working-directory: packages/sdk-php-laravel
+        run: |
+          composer update --no-interaction --no-progress --prefer-dist \
+            --with "illuminate/contracts:^${{ matrix.laravel }}.0" \
+            --with "illuminate/support:^${{ matrix.laravel }}.0" \
+            --with "orchestra/testbench:^${{ matrix.testbench }}.0"
+      - name: phpunit
+        working-directory: packages/sdk-php-laravel
+        run: vendor/bin/phpunit
+
+  # ----- Integration tests against real Postgres + Redis -----
+  integration:
+    name: integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: syrotp
+          POSTGRES_PASSWORD: syrotp_dev_password
+          POSTGRES_DB: syrotp
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U syrotp"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm version is read from `packageManager` in root package.json.
+      # Don't set `version:` here — the action errors with
+      # ERR_PNPM_BAD_PM_VERSION when both sources are specified.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile=false
+
+      - name: integration tests
+        env:
+          DATABASE_URL_TEST: postgres://syrotp:syrotp_dev_password@localhost:5432/syrotp_test
+          REDIS_URL_TEST: redis://localhost:6379/15
+        run: pnpm --filter @syrotp/server test:integration
+
+  # ----- End-to-end smoke against a freshly-built server -----
+  smoke:
+    name: smoke
+    runs-on: ubuntu-latest
+    needs: [build]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: syrotp
+          POSTGRES_PASSWORD: syrotp_dev_password
+          POSTGRES_DB: syrotp
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U syrotp"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm version is read from `packageManager` in root package.json.
+      # Don't set `version:` here — the action errors with
+      # ERR_PNPM_BAD_PM_VERSION when both sources are specified.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile=false
+
+      - name: build server
+        run: pnpm --filter @syrotp/server build
+
+      - name: migrate
+        env:
+          DATABASE_URL: postgres://syrotp:syrotp_dev_password@localhost:5432/syrotp
+          REDIS_URL: redis://localhost:6379/0
+          MASTER_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          COOKIE_SECRET: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210
+        run: node apps/server/dist/db/migrate.js
+
+      - name: bootstrap a smoke app
+        id: bootstrap
+        env:
+          DATABASE_URL: postgres://syrotp:syrotp_dev_password@localhost:5432/syrotp
+          REDIS_URL: redis://localhost:6379/0
+          MASTER_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          COOKIE_SECRET: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210
+        run: |
+          set -e
+          OUT=$(node apps/server/dist/scripts/bootstrap.js \
+            --app-name "ci-smoke" \
+            --msisdn "+963998887777")
+          echo "$OUT"
+          PK=$(echo "$OUT" | grep -oE 'pk_live_[a-z0-9]+' | head -n1)
+          SK=$(echo "$OUT" | grep -oE 'sk_live_[a-z0-9]+' | head -n1)
+          RC=$(echo "$OUT" | grep -oE 'rcv_[A-Za-z0-9]+' | head -n1)
+          GK=$(echo "$OUT" | awk '/Gateway signing key/{getline; gsub(/^ +| +$/,"",$0); print}')
+          echo "pk=$PK"   >> $GITHUB_OUTPUT
+          echo "sk=$SK"   >> $GITHUB_OUTPUT
+          echo "rc=$RC"   >> $GITHUB_OUTPUT
+          echo "gk=$GK"   >> $GITHUB_OUTPUT
+
+      - name: start server
+        env:
+          DATABASE_URL: postgres://syrotp:syrotp_dev_password@localhost:5432/syrotp
+          REDIS_URL: redis://localhost:6379/0
+          MASTER_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          COOKIE_SECRET: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210
+          PORT: 3000
+          HOST: 127.0.0.1
+          # The whole load tool drives traffic from a single IP. Production
+          # values (10/60/120 per .env.example) would falsely cap throughput
+          # under load. Real deployments keep the defaults — see
+          # docs/performance.md.
+          RATE_LIMIT_START_PER_IP_PER_MIN: 50000
+          RATE_LIMIT_STATUS_PER_IP_PER_MIN: 50000
+          RATE_LIMIT_INBOUND_PER_RECEIVER_PER_MIN: 50000
+          # v0.8 PR #38 per-app buckets — same overrides for the
+          # smoke runner since the loadtest drives one app's traffic
+          # off a single IP at high rates.
+          RATE_LIMIT_VERIFICATIONS_PER_APP_PER_MIN: 50000
+          RATE_LIMIT_INBOUND_PER_APP_PER_MIN: 50000
+          RATE_LIMIT_BINDINGS_PER_APP_PER_MIN: 50000
+        run: |
+          node apps/server/dist/index.js &
+          for i in {1..20}; do
+            curl -sf http://127.0.0.1:3000/v1/health && break
+            sleep 1
+          done
+
+      - name: smoke
+        env:
+          SYROTP_BASE_URL: http://127.0.0.1:3000
+          SYROTP_PUBLIC_KEY: ${{ steps.bootstrap.outputs.pk }}
+          SYROTP_SECRET_KEY: ${{ steps.bootstrap.outputs.sk }}
+          SYROTP_RECEIVER_ID: ${{ steps.bootstrap.outputs.rc }}
+          SYROTP_GATEWAY_KEY: ${{ steps.bootstrap.outputs.gk }}
+          SYROTP_PHONE: "+963991234567"
+        run: node scripts/smoke.mjs
+
+      # The quick loadtest is the CI gate. It catches obvious regressions
+      # in start/inbound latency and replay rejection without burning a
+      # full release-baseline run on every push. The release workflow runs
+      # the full suite separately.
+      - name: loadtest (quick)
+        env:
+          SYROTP_BASE_URL: http://127.0.0.1:3000
+          DATABASE_URL: postgres://syrotp:syrotp_dev_password@localhost:5432/syrotp
+          MASTER_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          # CI runners are slower than dev machines — relax p95 targets so
+          # we don't false-positive on shared hardware.
+          SYROTP_LOAD_P95: "500"
+        run: |
+          pnpm --filter @syrotp/loadtest start scenario-a --workers 50 --p95-start 500 --p95-inbound 500 --p95-status 500
+          pnpm --filter @syrotp/loadtest start replay-storm
+
+      - name: upload loadtest reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loadtest-reports-quick
+          path: tools/loadtest/reports/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Proves the Python gateway's HMAC signer agrees with the server's
+      # TypeScript verifier byte-for-byte. If this fails, gateways in
+      # production would 401 on every inbound SMS.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install gsm gateway
+        working-directory: apps/gsm-gateway
+        run: pip install -e .
+      - name: gsm gateway → live server cross-stack sign
+        env:
+          SYROTP_BASE_URL: http://127.0.0.1:3000
+          SYROTP_RECEIVER_ID: ${{ steps.bootstrap.outputs.rc }}
+          SYROTP_GATEWAY_KEY: ${{ steps.bootstrap.outputs.gk }}
+        run: |
+          python - <<'PY'
+          import os, secrets, time, sys
+          from syrotp_gateway.client import SyrotpClient
+
+          c = SyrotpClient(
+              base_url=os.environ["SYROTP_BASE_URL"],
+              receiver_id=os.environ["SYROTP_RECEIVER_ID"],
+              signing_key=os.environ["SYROTP_GATEWAY_KEY"],
+          )
+          hb = c.heartbeat(queue_depth=0, sim_signal_dbm=-77, battery_percent=100)
+          print(f"heartbeat: status={hb.status} body={hb.body[:200]}")
+          assert hb.status == 200, f"heartbeat must succeed; got {hb.status}"
+
+          res = c.post_inbound(
+              from_="+963991234567",
+              to="+963998887777",
+              body="HELLO not-a-real-verify-code",
+              received_at_ms=int(time.time() * 1000),
+              idempotency_key="gsm-ci-" + secrets.token_hex(8),
+          )
+          print(f"inbound: status={res.status} body={res.body[:200]}")
+          assert res.status == 202, f"expected 202 (no_match accepted); got {res.status}"
+          print("CROSS-STACK SIGN OK")
+          PY
+
+      # Each cross-stack SDK step depends on a healthy receiver
+      # (server picks one whose `last_heartbeat_at` is within
+      # `RECEIVER_HEARTBEAT_TIMEOUT_SECONDS`, default 120s). The setup
+      # actions for Java/Swift/PHP can each take 30–180s, and the
+      # cumulative gap between heartbeats easily blows the window —
+      # the Swift step in particular has been seen failing with
+      # `SyrotpServerError(no_receiver)`. Revive the heartbeat right
+      # before each SDK step so we measure SDK conformance, not
+      # toolchain-setup latency.
+      - name: heartbeat-revive (before python sdk)
+        env:
+          SYROTP_BASE_URL: http://127.0.0.1:3000
+          SYROTP_RECEIVER_ID: ${{ steps.bootstrap.outputs.rc }}
+          SYROTP_GATEWAY_KEY: ${{ steps.bootstrap.outputs.gk }}
+        run: python scripts/ci-heartbeat-revive.py
+
+      # Proves the Python SDK speaks the same wire format as the TS
+      # server. If openapi.yaml drifts from the SDK, this fails before
+      # production sees a single missed verification.
+      - name: install python sdk
+        working-directory: packages/sdk-python
+        run: pip install -e .
+      - name: python sdk → live server cross-stack
+        env:
+          SYROTP_BASE_URL: http://127.0.0.1:3000
+          SYROTP_SECRET_KEY: ${{ steps.bootstrap.outputs.sk }}
+        run: |
+          python - <<'PY'
+          import os
+          from syrotp import SyrotpClient, VerificationStatus
+          from syrotp.errors import SyrotpError
+
+          with SyrotpClient(
+              base_url=os.environ["SYROTP_BASE_URL"],
+              api_key=os.environ["SYROTP_SECRET_KEY"],
+          ) as client:
+              v = client.start_verification(phone="+963991234567", purpose="ci-smoke")
+              print(f"start_verification: id={v.id} status={v.status.value} send_to={v.send_to!r}")
+              assert v.status == VerificationStatus.PENDING, f"expected pending; got {v.status}"
+              assert v.id.startswith("vrf_"), f"unexpected id shape: {v.id!r}"
+              assert v.send_to and v.message, "send_to/message must be present on a pending verification"
+
+              fetched = client.get_verification(v.id)
+              assert fetched.id == v.id and fetched.status == VerificationStatus.PENDING
+
+              cancelled = client.cancel_verification(v.id)
+              assert cancelled.status == VerificationStatus.CANCELLED, f"expected cancelled; got {cancelled.status}"
+              print("PYTHON SDK CROSS-STACK OK")
+          PY
+
+      # Proves the Kotlin SDK speaks the same wire format as the TS server.
+      # Mirrors the Python SDK + GSM gateway pattern.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v3
+      - name: heartbeat-revive (before kotlin sdk)
+        env:
+          SYROTP_BASE_URL: http://127.0.0.1:3000
+          SYROTP_RECEIVER_ID: ${{ steps.bootstrap.outputs.rc }}
+          SYROTP_GATEWAY_KEY: ${{ steps.bootstrap.outputs.gk }}
+        run: python scripts/ci-heartbeat-revive.py
+      - name: kotlin sdk → live server cross-stack
+        working-directory: packages/sdk-kotlin
+        env:
+          SYROTP_BASE_URL: http://127.0.0.1:3000
+          SYROTP_SECRET_KEY: ${{ steps.bootstrap.outputs.sk }}
+        run: |
+          gradle --no-daemon run --args="+963991234567 ci-smoke" | tee /tmp/kotlin-cs.log
+          grep -q "final status after cancel: cancelled" /tmp/kotlin-cs.log
+          echo "KOTLIN SDK CROSS-STACK OK"
+
+      # Proves the Swift SDK speaks the same wire format as the TS server.
+      # Uses Linux Swift via swift-actions/setup-swift so we stay on
+      # ubuntu-latest (cheap) instead of spinning up a macOS runner just
+      # for the cross-stack step. swift test on macOS is its own job.
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "5.10"
+      - name: heartbeat-revive (before swift sdk)
+        env:
+          SYROTP_BASE_URL: http://127.0.0.1:3000
+          SYROTP_RECEIVER_ID: ${{ steps.bootstrap.outputs.rc }}
+          SYROTP_GATEWAY_KEY: ${{ steps.bootstrap.outputs.gk }}
+        run: python scripts/ci-heartbeat-revive.py
+      - name: swift sdk → live server cross-stack
+        working-directory: packages/sdk-swift
+        env:
+          SYROTP_BASE_URL: http://127.0.0.1:3000
+          SYROTP_SECRET_KEY: ${{ steps.bootstrap.outputs.sk }}
+        run: |
+          swift run -c release Quickstart "+963991234567" ci-smoke | tee /tmp/swift-cs.log
+          grep -q "final status after cancel: cancelled" /tmp/swift-cs.log
+          echo "SWIFT SDK CROSS-STACK OK"
+
+      # Proves the PHP SDK speaks the same wire format as the TS server.
+      # Mirrors the Python / Kotlin / Swift cross-stack pattern.
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          coverage: none
+          extensions: curl, json, mbstring
+      - name: install php sdk
+        working-directory: packages/sdk-php
+        run: composer install --no-dev --no-interaction --no-progress --prefer-dist
+      - name: heartbeat-revive (before php sdk)
+        env:
+          SYROTP_BASE_URL: http://127.0.0.1:3000
+          SYROTP_RECEIVER_ID: ${{ steps.bootstrap.outputs.rc }}
+          SYROTP_GATEWAY_KEY: ${{ steps.bootstrap.outputs.gk }}
+        run: python scripts/ci-heartbeat-revive.py
+      - name: php sdk → live server cross-stack
+        working-directory: packages/sdk-php
+        env:
+          SYROTP_BASE_URL: http://127.0.0.1:3000
+          SYROTP_SECRET_KEY: ${{ steps.bootstrap.outputs.sk }}
+        run: |
+          php examples/quickstart.php "+963991234567" ci-smoke | tee /tmp/php-cs.log
+          grep -q "final status after cancel: cancelled" /tmp/php-cs.log
+          echo "PHP SDK CROSS-STACK OK"

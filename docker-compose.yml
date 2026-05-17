@@ -1,0 +1,111 @@
+name: syrotp
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: syrotp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-syrotp_dev_password}
+      POSTGRES_DB: syrotp
+      # Tighten authentication so no trust-based connections sneak in.
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U syrotp -d syrotp"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Bind localhost only by default; remap if you really need remote.
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - "256mb"
+      - --maxmemory-policy
+      - "allkeys-lru"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "127.0.0.1:6379:6379"
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      HOST: 0.0.0.0
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
+      DATABASE_URL: postgres://syrotp:${POSTGRES_PASSWORD:-syrotp_dev_password}@postgres:5432/syrotp
+      REDIS_URL: redis://redis:6379
+      MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY}
+      COOKIE_SECRET: ${COOKIE_SECRET}
+      VERIFICATION_TTL_SECONDS: ${VERIFICATION_TTL_SECONDS:-600}
+      VERIFICATION_CODE_LENGTH: ${VERIFICATION_CODE_LENGTH:-6}
+      MAX_PENDING_PER_PHONE: ${MAX_PENDING_PER_PHONE:-3}
+      MAX_PENDING_PER_IP: ${MAX_PENDING_PER_IP:-10}
+      RATE_LIMIT_START_PER_IP_PER_MIN: ${RATE_LIMIT_START_PER_IP_PER_MIN:-10}
+      RATE_LIMIT_STATUS_PER_IP_PER_MIN: ${RATE_LIMIT_STATUS_PER_IP_PER_MIN:-60}
+      RATE_LIMIT_INBOUND_PER_RECEIVER_PER_MIN: ${RATE_LIMIT_INBOUND_PER_RECEIVER_PER_MIN:-120}
+      RECEIVER_HEARTBEAT_TIMEOUT_SECONDS: ${RECEIVER_HEARTBEAT_TIMEOUT_SECONDS:-120}
+      INBOUND_TIMESTAMP_SKEW_SECONDS: ${INBOUND_TIMESTAMP_SKEW_SECONDS:-300}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      DEFAULT_PHONE_REGION: ${DEFAULT_PHONE_REGION:-SY}
+      # /admin dashboard — disabled by default. Set BOTH in .env to
+      # enable. See docs/operations.md#3-configure-admin-auth for how to
+      # generate the scrypt hash.
+      ADMIN_USER: ${ADMIN_USER:-}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
+    ports:
+      - "${PORT:-3000}:3000"
+    # Drop unneeded Linux capabilities — runtime needs none.
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://syrotp:${POSTGRES_PASSWORD:-syrotp_dev_password}@postgres:5432/syrotp
+      REDIS_URL: redis://redis:6379
+      MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY}
+      COOKIE_SECRET: ${COOKIE_SECRET}
+    command: ["node", "dist/db/migrate.js"]
+    restart: "no"
+    profiles: ["migrate"]
+
+volumes:
+  pgdata:
+    driver: local

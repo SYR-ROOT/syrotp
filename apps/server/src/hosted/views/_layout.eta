@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="referrer" content="no-referrer" />
+<meta name="robots" content="noindex,nofollow" />
+<title><%= it.title %></title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #0b0d12;
+    --panel: #141821;
+    --fg: #e6e8ee;
+    --muted: #8a93a6;
+    --accent: #6ea8fe;
+    --good: #2ec27e;
+    --warn: #e6a23c;
+    --bad: #e25f5f;
+    --border: #232938;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; min-height: 100vh; background: var(--bg); color: var(--fg);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 540px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-size: 22px; margin: 0 0 8px; font-weight: 600; }
+  p { margin: 0 0 12px; }
+  .lede { color: var(--muted); margin-bottom: 24px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+  .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .message-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .message-text { flex: 1; min-width: 0; padding: 10px 12px; background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 6px; font-size: 18px; font-weight: 600; word-break: break-all; }
+  .btn { background: var(--accent); color: #0b0d12; border: 0; border-radius: 6px; padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; }
+  .btn:hover { filter: brightness(1.1); }
+  .btn.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  .send-to { font-size: 20px; font-weight: 600; }
+  .countdown { color: var(--muted); font-size: 14px; }
+  .countdown.warn { color: var(--warn); }
+  .countdown.bad  { color: var(--bad); }
+  .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); }
+  .pill.pending   { color: var(--accent); border-color: var(--accent); }
+  .pill.verified  { color: var(--good);   border-color: var(--good); }
+  .pill.expired   { color: var(--warn);   border-color: var(--warn); }
+  .pill.cancelled { color: var(--muted); }
+  .pill.failed    { color: var(--bad);    border-color: var(--bad); }
+  .result h2 { margin: 0 0 8px; font-size: 24px; }
+  .result.success h2 { color: var(--good); }
+  .result.expired h2 { color: var(--warn); }
+  .result.cancelled h2 { color: var(--muted); }
+  .result.failed h2  { color: var(--bad); }
+  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 32px; }
+  footer a { color: inherit; text-decoration: underline; }
+</style>
+</head>
+<body>
+<main>
+<%~ it.body %>
+</main>
+<footer>
+  Powered by <a href="https://github.com/SYR-ROOT/orotp" rel="noopener noreferrer">OROTP</a>
+</footer>
+</body>
+</html>

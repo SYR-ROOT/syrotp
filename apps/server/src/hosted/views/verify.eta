@@ -1,0 +1,140 @@
+<%
+  const v = it.verification;
+  const isPending = v.status === "pending";
+  // Build the sms: deep-link only when both pieces are present. Encode
+  // the full message in the body= param so most mobile SMS apps
+  // pre-fill it for the user. URL-encoding is a one-time string op;
+  // safe to do in the template since v.send_to and v.message come
+  // from server-controlled DB values.
+  const smsHref = (isPending && v.send_to && v.message)
+    ? `sms:${encodeURIComponent(v.send_to)}?body=${encodeURIComponent(v.message)}`
+    : null;
+%>
+<h1>Verify your phone</h1>
+<p class="lede">
+  for <span class="mono"><%= v.phone_masked %></span>
+  <span class="pill <%= v.status %>"><%= v.status %></span>
+</p>
+
+<% if (isPending && v.send_to && v.message) { %>
+<section class="panel" id="instruction" data-id="<%= v.id %>" data-expires-at="<%= v.expires_at %>" data-poll-ms="<%= it.pollIntervalMs %>">
+  <div class="label">Send this SMS message:</div>
+  <div class="message-row">
+    <code id="message" class="message-text mono"><%= v.message %></code>
+    <button type="button" id="copy-btn" class="btn secondary" aria-label="Copy message">Copy</button>
+  </div>
+
+  <div class="label" style="margin-top:18px;">To this phone number:</div>
+  <% if (smsHref) { %>
+    <p><a href="<%= smsHref %>" class="send-to mono"><%= v.send_to %></a></p>
+  <% } else { %>
+    <p class="send-to mono"><%= v.send_to %></p>
+  <% } %>
+
+  <p class="countdown" id="countdown" aria-live="polite">expires in <span id="countdown-value">--:--</span></p>
+
+  <% if (it.webauthnFallbackUrl) { %>
+    <p style="margin-top:16px; font-size:13px; color: var(--muted);">
+      Can't receive SMS?
+      <a href="<%= it.webauthnFallbackUrl %>" rel="noopener noreferrer">Use a passkey instead</a>.
+    </p>
+  <% } %>
+</section>
+<% } else if (v.status === "verified") { %>
+<section class="panel result success">
+  <h2>Verified</h2>
+  <p>Your phone has been confirmed. You can return to the app.</p>
+</section>
+<% } else if (v.status === "expired") { %>
+<section class="panel result expired">
+  <h2>Expired</h2>
+  <p>This verification timed out. Ask the app to start a new one.</p>
+</section>
+<% } else if (v.status === "cancelled") { %>
+<section class="panel result cancelled">
+  <h2>Cancelled</h2>
+  <p>This verification was cancelled. Ask the app to start a new one if you still need to verify.</p>
+</section>
+<% } else { %>
+<section class="panel result failed">
+  <h2>Could not verify</h2>
+  <p>Something went wrong. Ask the app to start a new verification.</p>
+</section>
+<% } %>
+
+<% if (isPending) { %>
+<script nonce="<%= it.scriptNonce %>">
+(function () {
+  "use strict";
+  var node = document.getElementById("instruction");
+  if (!node) return;
+  var id = node.getAttribute("data-id");
+  var pollMs = parseInt(node.getAttribute("data-poll-ms"), 10) || 2500;
+  var expiresAt = Date.parse(node.getAttribute("data-expires-at"));
+
+  // ----- countdown -------------------------------------------------------
+  var cdEl = document.getElementById("countdown");
+  var cdVal = document.getElementById("countdown-value");
+  function tick() {
+    var remaining = Math.max(0, expiresAt - Date.now());
+    var totalSec = Math.floor(remaining / 1000);
+    var m = Math.floor(totalSec / 60);
+    var s = totalSec % 60;
+    if (cdVal) cdVal.textContent = m + ":" + (s < 10 ? "0" + s : s);
+    if (cdEl) {
+      cdEl.classList.toggle("warn", totalSec <= 60 && totalSec > 15);
+      cdEl.classList.toggle("bad", totalSec <= 15);
+    }
+    if (totalSec <= 0) {
+      // Server will lazy-expire on the next poll; force a reload to
+      // pick up the new state.
+      setTimeout(function () { location.reload(); }, 500);
+      return;
+    }
+    setTimeout(tick, 1000);
+  }
+  tick();
+
+  // ----- copy button -----------------------------------------------------
+  var copyBtn = document.getElementById("copy-btn");
+  var msgEl = document.getElementById("message");
+  if (copyBtn && msgEl && navigator.clipboard) {
+    copyBtn.addEventListener("click", function () {
+      navigator.clipboard.writeText(msgEl.textContent || "").then(
+        function () {
+          var label = copyBtn.textContent;
+          copyBtn.textContent = "Copied";
+          setTimeout(function () { copyBtn.textContent = label || "Copy"; }, 1500);
+        },
+        function () {
+          copyBtn.textContent = "Copy failed";
+        }
+      );
+    });
+  } else if (copyBtn) {
+    // No clipboard API (older browser, insecure context). Hide the
+    // button rather than leave it inert and confusing.
+    copyBtn.style.display = "none";
+  }
+
+  // ----- polling ---------------------------------------------------------
+  function poll() {
+    fetch("/v/" + encodeURIComponent(id) + "/status", {
+      method: "GET",
+      credentials: "omit",
+      cache: "no-store",
+      headers: { "Accept": "application/json" }
+    }).then(function (r) {
+      if (!r.ok) return null;
+      return r.json();
+    }).then(function (data) {
+      if (data && data.status && data.status !== "pending") {
+        // State changed — reload to render the terminal panel.
+        location.reload();
+      }
+    }).catch(function () { /* swallow — poll again next tick */ });
+  }
+  setInterval(poll, pollMs);
+})();
+</script>
+<% } %>

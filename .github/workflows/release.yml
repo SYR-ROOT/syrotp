@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: extract changelog section
+        id: changelog
+        run: |
+          TAG="${GITHUB_REF##*/}"
+          # Pull the section between "## [<tag>]" and the next "## [".
+          awk -v tag="${TAG#v}" '
+            /^## \[/ {
+              if (printing) exit
+              if ($0 ~ "\\["tag"\\]") { printing = 1; next }
+            }
+            printing { print }
+          ' CHANGELOG.md > section.md
+          {
+            echo "body<<EOF"
+            cat section.md
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body: ${{ steps.changelog.outputs.body }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            openapi.yaml
+            CHANGELOG.md
+            ROADMAP.md
+            KNOWN-LIMITATIONS.md
+            SECURITY.md

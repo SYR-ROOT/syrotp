@@ -1,0 +1,63 @@
+{
+    "name": "syrotp/laravel",
+    "description": "Laravel integration for the Syrian Reverse OTP Protocol PHP SDK. ServiceProvider + Facade + publishable config.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["otp", "sms", "verification", "syrotp", "reverse-otp", "laravel"],
+    "homepage": "https://github.com/SYR-ROOT/syrotp",
+    "authors": [
+        {
+            "name": "Muhammed Sheko (SYR-ROOT)",
+            "homepage": "https://github.com/SYR-ROOT"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/SYR-ROOT/syrotp/issues",
+        "source": "https://github.com/SYR-ROOT/syrotp/tree/main/packages/sdk-php-laravel",
+        "docs": "https://github.com/SYR-ROOT/syrotp/blob/main/packages/sdk-php-laravel/README.md"
+    },
+    "require": {
+        "php": "^8.2",
+        "syrotp/sdk": "^0.1",
+        "illuminate/contracts": "^11.0|^12.0",
+        "illuminate/support": "^11.0|^12.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^9.0|^10.0",
+        "phpunit/phpunit": "^10.5|^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Syrotp\\Sdk\\Laravel\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Syrotp\\Sdk\\Laravel\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Syrotp\\Sdk\\Laravel\\SyrotpServiceProvider"
+            ]
+        }
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../sdk-php",
+            "options": {
+                "symlink": true,
+                "versions": {
+                    "syrotp/sdk": "0.1.0"
+                }
+            }
+        }
+    ],
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

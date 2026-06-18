@@ -201,25 +201,54 @@ export async function startVerification(
   // Receiver pick happens INSIDE the lock so we don't waste a pick on a
   // request that turns out to be over the cap; the pick itself is read-
   // only so it doesn't extend the lock window meaningfully.
-  const code = generateCode(config.VERIFICATION_CODE_LENGTH);
+  //
+  // v1.x FIX 6 — Code-collision retry. The partial unique index
+  // `verifications_pending_uniq` (migration 0006) enforces that no
+  // two pending rows share (receiver_id, phone_e164, code). A
+  // collision is astronomically unlikely with the default 6-char
+  // base-31 codes (~887M combinations) bounded by the per-(app,
+  // phone) pending cap, but when it does happen the INSERT below
+  // throws 23505. We catch it specifically on this index and retry
+  // with a fresh code, up to MAX_CODE_COLLISION_RETRIES times,
+  // before surfacing the error. The retry surrounds the whole
+  // transaction because the doomed transaction must roll back before
+  // we can try again — an INSERT inside a poisoned tx is a no-op.
   const id = newId(VERIFICATION_PREFIX);
   const now = new Date();
   const expiresAt = new Date(now.getTime() + config.VERIFICATION_TTL_SECONDS * 1000);
   const messagePrefix = "VERIFY";
   const lockKey = `${input.appId}:${input.phoneE164}`;
 
-  const txResult = await db.transaction(async (tx) => {
+  const txResult = await runWithCodeCollisionRetry((code) => db.transaction(async (tx) => {
     // Per-(app, phone) advisory lock — different phones don't contend.
     await tx.execute(sql`
       SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))
     `);
 
-    // Cap concurrent pending verifications per phone (anti-enumeration & abuse).
+    // Cap concurrent pending verifications per (app, phone) — anti-enumeration
+    // & abuse. The advisory lock above is keyed on (app_id, phone_e164), so
+    // scoping the count to the same tenant is what makes the gate coherent:
+    //
+    //   - Without the appId predicate, MAX_PENDING_PER_PHONE would be a
+    //     GLOBAL cap across every tenant that happens to use this phone.
+    //     A noisy neighbor (or a deliberate attacker holding a single
+    //     attacker-owned app) could exhaust the cap and DoS every other
+    //     tenant trying to verify the same number. It would also leak
+    //     a cross-tenant oracle: "is phone X currently in-flight in some
+    //     OTHER app?" — exactly the kind of side-channel the per-tenant
+    //     model is supposed to prevent.
+    //
+    //   - With the appId predicate, the cap is per (app, phone): tenants
+    //     are isolated, the supporting `verifications_phone_idx`
+    //     (phone_e164, status) plus the appId equality remains
+    //     index-friendly, and the lock granularity (app_id, phone_e164)
+    //     matches the count granularity exactly.
     const pendingForPhone = await tx
       .select({ count: sql<number>`count(*)::int` })
       .from(schema.verifications)
       .where(
         and(
+          eq(schema.verifications.appId, input.appId),
           eq(schema.verifications.phoneE164, input.phoneE164),
           eq(schema.verifications.status, "pending"),
         ),
@@ -254,11 +283,12 @@ export async function startVerification(
       createdIp: input.ip,
     });
 
-    return { receiver };
-  });
+    return { receiver, code };
+  }));
 
   metrics.receiverSelected(txResult.receiver.match);
   const receiver = txResult.receiver;
+  const code = txResult.code;
 
   return {
     id,
@@ -272,6 +302,65 @@ export async function startVerification(
     created_at: now.toISOString(),
     attempts: 0,
   };
+}
+
+/**
+ * Maximum attempts to generate a non-colliding verification code
+ * before giving up. With 6-char base-31 codes and the per-(app,
+ * phone) pending cap, the per-attempt collision probability is on
+ * the order of 1e-8, so even 3 retries gives a vanishing exhaustion
+ * probability. The retry budget exists to bound worst-case latency
+ * if an operator runs with shorter codes (config allows down to 4
+ * chars) and a hot phone.
+ */
+const MAX_CODE_COLLISION_RETRIES = 3;
+
+/**
+ * Run an attempt with a freshly-generated verification code; if the
+ * attempt fails with a 23505 unique violation on the partial index
+ * `verifications_pending_uniq`, generate a new code and retry, up to
+ * MAX_CODE_COLLISION_RETRIES times.
+ *
+ * Errors that are NOT this specific collision (including OTHER 23505
+ * violations elsewhere on `verifications`) propagate unchanged so
+ * they're never silently swallowed. The narrow match against the
+ * index name is intentional — we never want a future unique
+ * constraint elsewhere on this table to be hidden by the retry loop.
+ */
+async function runWithCodeCollisionRetry<T>(
+  attempt: (code: string) => Promise<T>,
+): Promise<T> {
+  for (let i = 0; i < MAX_CODE_COLLISION_RETRIES; i++) {
+    const code = generateCode(config.VERIFICATION_CODE_LENGTH);
+    try {
+      return await attempt(code);
+    } catch (err) {
+      if (!isPendingCodeCollision(err)) {
+        throw err;
+      }
+      metrics.verificationCodeCollision("retried");
+    }
+  }
+  metrics.verificationCodeCollision("exhausted");
+  // 503 because the failure is a transient state-space pressure
+  // problem, not a client error. We deliberately do NOT echo the
+  // index name or row detail to the caller — that information
+  // belongs in operator metrics, not on the wire.
+  throw serviceUnavailable(
+    "code_generation_collision",
+    "could not allocate a unique verification code after multiple attempts; retry the request",
+  );
+}
+
+/**
+ * Did this error come from the partial unique index on pending
+ * verifications? postgres-js exposes the SQLSTATE on `err.code` and
+ * the index name on `err.constraint_name` for unique violations.
+ */
+function isPendingCodeCollision(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { code?: unknown; constraint_name?: unknown };
+  return e.code === "23505" && e.constraint_name === "verifications_pending_uniq";
 }
 
 /**

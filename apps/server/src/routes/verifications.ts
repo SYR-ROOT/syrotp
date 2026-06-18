@@ -139,6 +139,22 @@ export async function verificationRoutes(app: FastifyInstance): Promise<void> {
     // it. A leaked public key in a browser must not be able to grief
     // pending verifications.
     const auth = await app.requireKey(req, ["secret"]);
+
+    // v1.0.1 — per-app rate limit. A leaked `sk_live_*` without this
+    // ceiling could mass-cancel a tenant's pending verifications at
+    // unlimited rates. There's no per-IP guard on cancel (legit
+    // cancels come from the developer's backend, not arbitrary
+    // clients), so the per-app bucket is the only ceiling.
+    const rlApp = await rateCheck(
+      `cancel:app:${auth.appId}`,
+      config.RATE_LIMIT_CANCEL_PER_APP_PER_MIN,
+      60,
+    );
+    if (!rlApp.allowed) {
+      metrics.rateLimited("verification_cancel_per_app");
+      throw rateLimited(rlApp.resetSeconds);
+    }
+
     const params = idParam.safeParse(req.params);
     if (!params.success) throw notFound("verification");
 

@@ -1,22 +1,26 @@
 # SYROTP — Syrian Reverse OTP Protocol
 
-> Proprietary reverse SMS verification for regions where outbound OTP
-> delivery is unreliable. Instead of sending an OTP **to** the user,
-> the user sends a short verification message **from** their phone to
-> a local receiver number — domestic SMS works even when international
-> inbound routes are blocked.
+> *إلى أرواح شهداء سوريا — بُني هذا البروتوكول ليصل صوتهم، حتى حيث لا تصل الرسائل.*
+>
+> *Dedicated to the souls of the martyrs of Syria — built so their voice may reach, even where messages cannot.* See [`DEDICATION.md`](DEDICATION.md).
+
+> Reverse SMS verification for regions where outbound OTP delivery is
+> unreliable. Instead of sending an OTP **to** the user, the user sends a
+> short verification message **from** their phone to a local receiver
+> number — domestic SMS works even when international inbound routes are
+> blocked.
 
 ![status](https://img.shields.io/badge/status-v1.0.0-green)
 ![protocol](https://img.shields.io/badge/protocol-1.0.0%20frozen-blue)
-![license](https://img.shields.io/badge/license-proprietary-red)
+![license](https://img.shields.io/badge/license-MIT-blue.svg)
 
 ---
 
 ## Why this exists
 
-In countries with restricted or unreliable **outbound** SMS routes
-(Syria, Cuba, sanctioned operators, etc.), traditional OTP-by-SMS is
-broken. SYROTP flips the direction:
+In regions where international **outbound** SMS routes are unreliable
+(Syria and similar networks), traditional OTP-by-SMS is broken.
+SYROTP flips the direction:
 
 1. Your app calls `POST /v1/verifications` with a phone number.
 2. The server returns a unique code and a local receiver MSISDN.
@@ -53,6 +57,7 @@ where outbound OTP is not.
 | `packages/swift-ui` | SwiftUI components for iOS. |
 | `docs` | Operator + integration documentation. |
 | `openapi.yaml` | OpenAPI 3.1 contract for the server. |
+| `docs/ar/integration-guide.md` | **دليل التكامل العربي الشامل** — Arabic-language full integration guide for Arab developers (Fusha). |
 
 ---
 
@@ -250,10 +255,11 @@ See [`ROADMAP.md`](ROADMAP.md) for v1.1+ work.
 
 ## License
 
-**Proprietary.** See [`LICENSE`](LICENSE). All rights reserved.
+**MIT** — see [`LICENSE`](LICENSE).
 
-For licensing, partnership, or commercial-use inquiries:
-**licensing@syrotp.dev**
+SYROTP is released openly for anyone, anywhere, for any purpose, without
+restriction. We only ask that you use it for good. See [`DEDICATION.md`](DEDICATION.md)
+for the spirit behind this release.
 
 ---
 

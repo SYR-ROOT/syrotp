@@ -1,8 +1,9 @@
-import { and, eq, gt, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db, schema } from "../db/index.js";
 import { newId, INBOUND_PREFIX } from "../lib/ids.js";
 import { normalizePhone } from "../lib/phone.js";
 import { config } from "../config.js";
+import { metrics } from "./metrics.js";
 import { consumeBindNonce, extractBindNonce } from "./phoneBindings.js";
 import { buildVerificationEventData, emitVerificationEventInTx } from "./webhooks.js";
 
@@ -148,9 +149,28 @@ export async function processInbound(input: MatchInput): Promise<MatchOutcome> {
   // received_at. A compromised gateway must not be able to backdate a late
   // SMS to revive an expired verification.
   //
-  // The atomic UPDATE ... WHERE status='pending' guarantees only one
-  // inbound can claim a given verification — eliminates a TOCTOU race
-  // where two SMS arrive close together.
+  // The atomic UPDATE guarantees only one inbound can claim a given
+  // verification — eliminates a TOCTOU race where two SMS arrive close
+  // together.
+  //
+  // v1.x FIX 6 — Single-row claim. The UPDATE targets exactly one row
+  // by picking it via a single-row sub-SELECT (LIMIT 1 + FOR UPDATE
+  // SKIP LOCKED). This is defense-in-depth against the (now schema-
+  // prevented) case where two pending verifications could share
+  // (receiver_id, phone_e164, code) and the matcher would otherwise
+  // flip BOTH and silently drop the second one (webhook delivery only
+  // reads claimed[0]). The partial unique index
+  // `verifications_pending_uniq` (migration 0006) makes the collision
+  // a 23505 at insert time, so the multi-row case cannot legitimately
+  // occur — but the explicit LIMIT 1 plus the post-condition assert
+  // below means that even if the index is missing (e.g. an operator
+  // skipped the migration), no inbound can ever claim more than one
+  // verification.
+  //
+  // FOR UPDATE SKIP LOCKED avoids head-of-line blocking when two
+  // inbound SMS for two DIFFERENT verifications happen to scan the
+  // same index region; we'd rather a concurrent flow skip a locked
+  // row and pick a different match than block on it.
   //
   // Wrapped in a transaction so the claim, the matching webhook event,
   // and the inbound→verification back-link land atomically. A
@@ -167,17 +187,28 @@ export async function processInbound(input: MatchInput): Promise<MatchOutcome> {
         attempts: sql`${schema.verifications.attempts} + 1`,
       })
       .where(
-        and(
-          eq(schema.verifications.receiverId, input.receiverId),
-          eq(schema.verifications.phoneE164, fromE164),
-          eq(schema.verifications.code, code),
-          eq(schema.verifications.status, "pending"),
-          gt(schema.verifications.expiresAt, serverNow),
-        ),
+        sql`${schema.verifications.id} = (
+          SELECT ${schema.verifications.id}
+          FROM ${schema.verifications}
+          WHERE ${schema.verifications.receiverId} = ${input.receiverId}
+            AND ${schema.verifications.phoneE164} = ${fromE164}
+            AND ${schema.verifications.code} = ${code}
+            AND ${schema.verifications.status} = 'pending'
+            AND ${schema.verifications.expiresAt} > ${serverNow}
+          LIMIT 1
+          FOR UPDATE SKIP LOCKED
+        )`,
       )
       .returning();
 
     if (claimed.length === 0) return null;
+    // Belt-and-braces: the LIMIT 1 sub-SELECT + the partial unique
+    // index together make this unreachable. If we ever see >1 rows
+    // claimed it means BOTH defenses have failed and a downstream
+    // verifier silently dropped a verification — page the on-call.
+    if (claimed.length > 1) {
+      metrics.matchingInvariantViolated();
+    }
     const row = claimed[0]!;
 
     await emitVerificationEventInTx(

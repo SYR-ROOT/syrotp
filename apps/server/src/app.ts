@@ -3,7 +3,7 @@ import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import sensible from "@fastify/sensible";
 import { randomUUID } from "node:crypto";
-import { config } from "./config.js";
+import { config, trustedProxies } from "./config.js";
 import { authPlugin } from "./plugins/auth.js";
 import { errorHandlerPlugin } from "./plugins/errorHandler.js";
 import { rawBodyPlugin } from "./plugins/rawBody.js";
@@ -30,6 +30,17 @@ declare module "fastify" {
      */
     webhookWorker: WebhookWorker;
   }
+  interface FastifyRequest {
+    /**
+     * The raw, attacker-controlled `X-Request-Id` header value, if the
+     * client sent one (and it passed shape validation). Carried so
+     * audit / debug surfaces can echo what the client claimed without
+     * letting that value poison `req.id` — which we always
+     * server-generate. Never use this for log correlation or as a key
+     * in any data structure indexed by request identity.
+     */
+    clientRequestId?: string;
+  }
 }
 
 export interface BuildAppOptions {
@@ -43,6 +54,31 @@ export interface BuildAppOptions {
 }
 
 export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInstance> {
+  // Resolve the proxy-trust configuration:
+  //   - If TRUSTED_PROXIES is set, we always trust it — `trustProxy`
+  //     receives the array form, so Fastify only honours X-Forwarded-*
+  //     from those exact hops.
+  //   - Otherwise we fall back to `false` (trust nobody). The legacy
+  //     boolean TRUST_PROXY=true used to silently mean "trust EVERY
+  //     upstream", which allowed req.ip spoofing via X-Forwarded-For.
+  //     In production we now refuse to boot in that configuration
+  //     (see config.ts). In dev we warn and downgrade to `false`.
+  let resolvedTrustProxy: string[] | false;
+  if (trustedProxies.length > 0) {
+    resolvedTrustProxy = [...trustedProxies];
+  } else {
+    resolvedTrustProxy = false;
+    if (config.TRUST_PROXY && config.NODE_ENV !== "production") {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[syrotp] TRUST_PROXY=true but TRUSTED_PROXIES is empty — " +
+          "downgrading to trustProxy=false. Set TRUSTED_PROXIES to the " +
+          "IP(s) / CIDR(s) of your reverse proxy to honour " +
+          "X-Forwarded-For. Production refuses to boot in this state.",
+      );
+    }
+  }
+
   const app = Fastify({
     logger: {
       level: config.LOG_LEVEL,
@@ -59,19 +95,28 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
         censor: "[REDACTED]",
       },
     },
-    // Always assign a request id; trust upstream X-Request-Id only when behind proxy.
-    genReqId: (req) => {
-      if (config.TRUST_PROXY) {
-        const h = req.headers["x-request-id"];
-        if (typeof h === "string" && h.length <= 128 && /^[A-Za-z0-9._-]+$/.test(h)) return h;
-      }
-      return randomUUID();
-    },
-    trustProxy: config.TRUST_PROXY,
+    // ALWAYS server-generate req.id. We used to honour an upstream
+    // X-Request-Id when TRUST_PROXY was set, but that lets a caller
+    // (or any peer the proxy forwards from) poison our logs / audit
+    // rows / 500-response bodies with attacker-chosen values —
+    // including IDs that collide with real verifications. The raw
+    // header is still captured on `req.clientRequestId` (see the
+    // onRequest hook below) for audit echo purposes only.
+    genReqId: () => randomUUID(),
+    trustProxy: resolvedTrustProxy,
     // Cap request body size — inbound SMS bodies are < 2KB; admin payloads small.
     bodyLimit: 64 * 1024,
     // Disable x-powered-by-style server fingerprinting.
     disableRequestLogging: false,
+  });
+
+  // Capture (but never trust) the client-supplied X-Request-Id. Shape-
+  // validated to keep log lines tidy if anything ever echoes it.
+  app.addHook("onRequest", async (req) => {
+    const h = req.headers["x-request-id"];
+    if (typeof h === "string" && h.length > 0 && h.length <= 128 && /^[A-Za-z0-9._-]+$/.test(h)) {
+      req.clientRequestId = h;
+    }
   });
 
   if (opts.onRoute) {

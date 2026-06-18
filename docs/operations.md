@@ -510,7 +510,8 @@ ops:
 | `VERIFICATION_TTL_SECONDS`                  | 600  | How long a pending verification stays valid. Match user expectations. |
 | `MAX_PENDING_PER_PHONE`                     | 3    | Caps abuse from one phone. Bump only if you understand the abuse vector. |
 | `RATE_LIMIT_*`                              | varies | Per-IP / per-receiver caps. The defaults in `.env.example` are production-realistic. The release-baseline `.env` loosens them — **don't ship those values**. |
-| `TRUST_PROXY`                               | false | `true` only if the proxy in front of SYROTP is trusted to set `X-Forwarded-For`. |
+| `TRUSTED_PROXIES`                           | empty | Comma-separated CIDR list of upstream proxies whose `X-Forwarded-For` is honoured (e.g. `10.0.0.0/8,127.0.0.1`). Leave empty to trust no upstream. |
+| `TRUST_PROXY`                               | false | Legacy boolean. In production it MUST be paired with a non-empty `TRUSTED_PROXIES` or the server refuses to boot. |
 | `CORS_ORIGINS`                              | empty | Empty = no cross-origin allowed. `*` is permitted but never recommended. |
 | `LOG_LEVEL`                                 | info | `debug` only when actively investigating; the noise is significant. |
 

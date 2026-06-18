@@ -9,6 +9,7 @@ import {
   uniqueIndex,
   pgEnum,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 // Postgres `bytea` is the right native type for a binary public key;
 // Drizzle ships PG types but not bytea built-in, so we declare it
@@ -115,6 +116,21 @@ export const verifications = pgTable(
     phoneIdx: index("verifications_phone_idx").on(t.phoneE164, t.status),
     receiverIdx: index("verifications_receiver_idx").on(t.receiverId, t.status),
     expiresIdx: index("verifications_expires_idx").on(t.expiresAt),
+    // v1.x FIX 6 — Partial unique index on (receiver_id, phone_e164, code)
+    // restricted to `pending` rows. Eliminates the (already astronomically
+    // unlikely) chance that two concurrent pending verifications share the
+    // same code triple, which would let one inbound SMS claim BOTH in the
+    // matcher's UPDATE ... RETURNING and silently drop one. With the
+    // partial uniqueness in place, `startVerification` would 23505 at
+    // insert time instead — see services/verifications.ts for the
+    // collision-retry handler.
+    //
+    // The migration in `migrations/0006_pending_uniq.sql` is the
+    // authoritative declaration; this entry exists so drizzle-kit
+    // introspection stays in sync with the DB.
+    pendingUq: uniqueIndex("verifications_pending_uniq")
+      .on(t.receiverId, t.phoneE164, t.code)
+      .where(sql`${t.status} = 'pending'`),
   }),
 );
 

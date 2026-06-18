@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: syrotp
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-syrotp_dev_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env (run `node -e "console.log(require(\"crypto\").randomBytes(24).toString(\"base64url\"))"` to generate one)}
       POSTGRES_DB: syrotp
       # Tighten authentication so no trust-based connections sneak in.
       POSTGRES_HOST_AUTH_METHOD: scram-sha-256
@@ -59,7 +59,7 @@ services:
       HOST: 0.0.0.0
       LOG_LEVEL: ${LOG_LEVEL:-info}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
-      DATABASE_URL: postgres://syrotp:${POSTGRES_PASSWORD:-syrotp_dev_password}@postgres:5432/syrotp
+      DATABASE_URL: postgres://syrotp:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/syrotp
       REDIS_URL: redis://redis:6379
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY}
       COOKIE_SECRET: ${COOKIE_SECRET}
@@ -70,10 +70,26 @@ services:
       RATE_LIMIT_START_PER_IP_PER_MIN: ${RATE_LIMIT_START_PER_IP_PER_MIN:-10}
       RATE_LIMIT_STATUS_PER_IP_PER_MIN: ${RATE_LIMIT_STATUS_PER_IP_PER_MIN:-60}
       RATE_LIMIT_INBOUND_PER_RECEIVER_PER_MIN: ${RATE_LIMIT_INBOUND_PER_RECEIVER_PER_MIN:-120}
+      RATE_LIMIT_INBOUND_PER_IP_PER_MIN: ${RATE_LIMIT_INBOUND_PER_IP_PER_MIN:-600}
+      RATE_LIMIT_HEARTBEAT_PER_RECEIVER_PER_MIN: ${RATE_LIMIT_HEARTBEAT_PER_RECEIVER_PER_MIN:-6}
+      RATE_LIMIT_ADMIN_PER_IP_PER_5MIN: ${RATE_LIMIT_ADMIN_PER_IP_PER_5MIN:-10}
+      RATE_LIMIT_SK_LIVE_PER_APP_PER_MIN: ${RATE_LIMIT_SK_LIVE_PER_APP_PER_MIN:-60}
+      RATE_LIMIT_CANCEL_PER_APP_PER_MIN: ${RATE_LIMIT_CANCEL_PER_APP_PER_MIN:-60}
+      RATE_LIMIT_WEBHOOK_CRUD_PER_APP_PER_MIN: ${RATE_LIMIT_WEBHOOK_CRUD_PER_APP_PER_MIN:-30}
+      RATE_LIMIT_BINDING_READ_PER_APP_PER_MIN: ${RATE_LIMIT_BINDING_READ_PER_APP_PER_MIN:-60}
+      RATE_LIMIT_BINDING_REVOKE_PER_APP_PER_MIN: ${RATE_LIMIT_BINDING_REVOKE_PER_APP_PER_MIN:-30}
+      RATE_LIMIT_WEBAUTHN_PER_APP_PER_MIN: ${RATE_LIMIT_WEBAUTHN_PER_APP_PER_MIN:-30}
       RECEIVER_HEARTBEAT_TIMEOUT_SECONDS: ${RECEIVER_HEARTBEAT_TIMEOUT_SECONDS:-120}
       INBOUND_TIMESTAMP_SKEW_SECONDS: ${INBOUND_TIMESTAMP_SKEW_SECONDS:-300}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
+      # Proxy trust — see .env.example for the spoofing-vs-rate-limit
+      # tradeoff. Production refuses to boot if TRUST_PROXY=true without
+      # a non-empty TRUSTED_PROXIES allowlist.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       TRUST_PROXY: ${TRUST_PROXY:-false}
+      # SSRF guard escape hatch — MUST stay false outside the test
+      # suite. Production boot refuses if true.
+      WEBHOOK_ALLOW_PRIVATE_FOR_TESTS: ${WEBHOOK_ALLOW_PRIVATE_FOR_TESTS:-false}
       DEFAULT_PHONE_REGION: ${DEFAULT_PHONE_REGION:-SY}
       # /admin dashboard — disabled by default. Set BOTH in .env to
       # enable. See docs/operations.md#3-configure-admin-auth for how to
@@ -98,7 +114,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://syrotp:${POSTGRES_PASSWORD:-syrotp_dev_password}@postgres:5432/syrotp
+      DATABASE_URL: postgres://syrotp:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/syrotp
       REDIS_URL: redis://redis:6379
       MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY}
       COOKIE_SECRET: ${COOKIE_SECRET}

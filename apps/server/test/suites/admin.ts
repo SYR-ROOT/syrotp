@@ -136,16 +136,19 @@ describe("admin dashboard", () => {
     //       password's hash output (proxy for "no early-exit on first
     //       mismatched byte")
     const { verifyAdminPassword } = await import("../../src/admin/web/passwords.js");
-    assert.equal(verifyAdminPassword(VALID_HASH, ADMIN_PASSWORD), true);
-    assert.equal(verifyAdminPassword(VALID_HASH, "x"), false);
-    assert.equal(verifyAdminPassword(VALID_HASH, ""), false);
-    assert.equal(verifyAdminPassword(VALID_HASH, ADMIN_PASSWORD + "x"), false);
+    // verifyAdminPassword is async — scrypt is offloaded to libuv's
+    // thread pool so the main event loop doesn't stall under brute-
+    // force load. Await every call here.
+    assert.equal(await verifyAdminPassword(VALID_HASH, ADMIN_PASSWORD), true);
+    assert.equal(await verifyAdminPassword(VALID_HASH, "x"), false);
+    assert.equal(await verifyAdminPassword(VALID_HASH, ""), false);
+    assert.equal(await verifyAdminPassword(VALID_HASH, ADMIN_PASSWORD + "x"), false);
     // Tampered stored value must not authenticate even with the right pwd.
     const tampered = VALID_HASH.slice(0, -1) + (VALID_HASH.endsWith("0") ? "1" : "0");
-    assert.equal(verifyAdminPassword(tampered, ADMIN_PASSWORD), false);
+    assert.equal(await verifyAdminPassword(tampered, ADMIN_PASSWORD), false);
     // Garbage stored values must be rejected without throwing.
-    assert.equal(verifyAdminPassword("not-a-hash", ADMIN_PASSWORD), false);
-    assert.equal(verifyAdminPassword("scrypt$bad$bad", ADMIN_PASSWORD), false);
+    assert.equal(await verifyAdminPassword("not-a-hash", ADMIN_PASSWORD), false);
+    assert.equal(await verifyAdminPassword("scrypt$bad$bad", ADMIN_PASSWORD), false);
   });
 
   // ----- 6. phone never rendered in full ---------------------------

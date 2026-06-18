@@ -99,6 +99,23 @@ export const phoneBindingRoutes = fp(async function phoneBindingRoutes(
 
   app.get("/v1/phone-bindings/:id", async (req) => {
     const auth = await app.requireKey(req, ["secret"]);
+
+    // v1.0.1 — per-app rate limit on binding reads. The endpoint is
+    // typically polled by developer backends during the ceremony
+    // window (waiting for the BIND inbound to land), so the cap is
+    // looser (60/min default) than the destructive revoke below.
+    // Without it, a leaked `sk_live_*` could be used to enumerate
+    // binding ids cheaply.
+    const rlApp = await rateCheck(
+      `phone_binding_read:app:${auth.appId}`,
+      config.RATE_LIMIT_BINDING_READ_PER_APP_PER_MIN,
+      60,
+    );
+    if (!rlApp.allowed) {
+      metrics.rateLimited("phone_binding_read_per_app");
+      throw rateLimited(rlApp.resetSeconds);
+    }
+
     const params = idParam.safeParse(req.params);
     if (!params.success) {
       throw badRequest("validation_error", "invalid id");
@@ -108,6 +125,22 @@ export const phoneBindingRoutes = fp(async function phoneBindingRoutes(
 
   app.post("/v1/phone-bindings/:id/revoke", async (req) => {
     const auth = await app.requireKey(req, ["secret"]);
+
+    // v1.0.1 — per-app rate limit on binding revoke. Destructive
+    // (flips a `verified` row to `revoked`, breaking subsequent
+    // verifications for that phone), so the cap is tighter (30/min
+    // default). A leaked `sk_live_*` without this ceiling could be
+    // used to mass-revoke a tenant's bindings.
+    const rlApp = await rateCheck(
+      `phone_binding_revoke:app:${auth.appId}`,
+      config.RATE_LIMIT_BINDING_REVOKE_PER_APP_PER_MIN,
+      60,
+    );
+    if (!rlApp.allowed) {
+      metrics.rateLimited("phone_binding_revoke_per_app");
+      throw rateLimited(rlApp.resetSeconds);
+    }
+
     const params = idParam.safeParse(req.params);
     if (!params.success) {
       throw badRequest("validation_error", "invalid id");

@@ -13,8 +13,11 @@
 import type { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { z } from "zod";
-import { badRequest } from "../lib/errors.js";
+import { config } from "../config.js";
+import { badRequest, rateLimited } from "../lib/errors.js";
 import { audit } from "../services/audit.js";
+import { metrics } from "../services/metrics.js";
+import { rateCheck } from "../services/rateLimit.js";
 import {
   buildLoginOptions,
   buildRegisterOptions,
@@ -22,6 +25,33 @@ import {
   verifyLogin,
   verifyRegister,
 } from "../services/webauthn.js";
+
+/**
+ * v1.0.1 — every WebAuthn ceremony endpoint runs through one shared
+ * per-app rate limit. A leaked `sk_live_*` without this ceiling would
+ * let an attacker spam `register/options` to stamp millions of
+ * challenge rows (DoS of webauthn_challenges + the AEAD secret
+ * namespace), enumerate registered credentials via repeated
+ * `login/options` calls, or grind verify probes. There's no per-IP
+ * guard — WebAuthn ceremonies originate from the developer's
+ * backend, not arbitrary clients — so the per-app bucket is the
+ * only ceiling.
+ *
+ * One shared bucket across all four routes is intentional: an
+ * attacker with the key can amplify on whichever ceremony stage
+ * they pick, so the cap has to be on the whole surface.
+ */
+async function webauthnRateLimit(appId: string): Promise<void> {
+  const rl = await rateCheck(
+    `webauthn:app:${appId}`,
+    config.RATE_LIMIT_WEBAUTHN_PER_APP_PER_MIN,
+    60,
+  );
+  if (!rl.allowed) {
+    metrics.rateLimited("webauthn_per_app");
+    throw rateLimited(rl.resetSeconds);
+  }
+}
 
 const clientRefField = z
   .string()
@@ -55,6 +85,7 @@ export const webauthnRoutes = fp(async function webauthnRoutes(app: FastifyInsta
 
   app.post("/v1/webauthn/register/options", async (req, reply) => {
     const auth = await app.requireKey(req, ["secret"]);
+    await webauthnRateLimit(auth.appId);
     const parsed = optionsBody.safeParse(req.body);
     if (!parsed.success) {
       throw badRequest("validation_error", "invalid request body", {
@@ -72,6 +103,7 @@ export const webauthnRoutes = fp(async function webauthnRoutes(app: FastifyInsta
 
   app.post("/v1/webauthn/register/verify", async (req) => {
     const auth = await app.requireKey(req, ["secret"]);
+    await webauthnRateLimit(auth.appId);
     const parsed = verifyBody.safeParse(req.body);
     if (!parsed.success) {
       throw badRequest("validation_error", "invalid request body");
@@ -100,6 +132,7 @@ export const webauthnRoutes = fp(async function webauthnRoutes(app: FastifyInsta
 
   app.post("/v1/webauthn/login/options", async (req, reply) => {
     const auth = await app.requireKey(req, ["secret"]);
+    await webauthnRateLimit(auth.appId);
     const parsed = optionsBody.safeParse(req.body);
     if (!parsed.success) {
       throw badRequest("validation_error", "invalid request body");
@@ -114,6 +147,7 @@ export const webauthnRoutes = fp(async function webauthnRoutes(app: FastifyInsta
 
   app.post("/v1/webauthn/login/verify", async (req) => {
     const auth = await app.requireKey(req, ["secret"]);
+    await webauthnRateLimit(auth.appId);
     const parsed = verifyBody.safeParse(req.body);
     if (!parsed.success) {
       throw badRequest("validation_error", "invalid request body");

@@ -5,6 +5,13 @@ Navigation by audience. The wire contract itself lives in
 truth. Everything in this folder explains how to use, operate, or
 reason about that contract.
 
+## للمطورين العرب — العربية
+
+دليل تكامل شامل بالعربية الفصحى يأخذك من الصفر إلى الإنتاج:
+**[`ar/integration-guide.md`](ar/integration-guide.md)** — يغطّي البنية،
+إعداد الخادم، ربط هاتفَي استقبال، أمثلة كود بأربع لغات (JS / Python /
+PHP / Kotlin)، اختبار شامل، تشغيل في الإنتاج، واستكشاف الأعطال.
+
 ## I'm integrating against SYROTP (developer)
 
 Read in this order:

@@ -107,6 +107,14 @@ const rateLimited = new Counter({
   //                                  buckets shipped pre-v0.8.
   // "verification_start_per_app" | "inbound_sms_per_app"
   // | "phone_binding_start_per_app" — v0.8 PR #38 per-app buckets.
+  // "inbound_per_ip" | "heartbeat_per_ip" | "heartbeat_per_receiver"
+  //   — v1.0.1: pre-HMAC per-IP shedding + post-HMAC per-receiver
+  //   heartbeat cap. See routes/inbound.ts.
+  // "verification_cancel_per_app" | "webhook_crud_per_app"
+  // | "phone_binding_read_per_app" | "phone_binding_revoke_per_app"
+  // | "webauthn_per_app" — v1.0.1: per-app caps on the remaining
+  //   sk_live_*-gated surface. A leaked secret key without these
+  //   could amplify destructive ops at unlimited rates.
   labelNames: ["bucket"] as const,
   registers: [registry],
 });
@@ -132,6 +140,21 @@ const receiverHeartbeatAge = new Gauge({
   // Receiver ID is in our control (we minted it), bounded by deployment
   // size — typically 1-10 per app, dozens per fleet. Acceptable cardinality.
   labelNames: ["receiver_id"] as const,
+  registers: [registry],
+});
+
+// v1.0.1 — heartbeat handler coalesces DB writes. We only UPDATE the
+// `last_heartbeat_at` column when the last write is older than
+// RECEIVER_HEARTBEAT_TIMEOUT_SECONDS/4 (≈ 30s on defaults); otherwise
+// we acknowledge the heartbeat but skip the write. This counter
+// tracks the applied vs skipped split so operators can confirm the
+// optimization is doing its job (skip rate ≈ 75% on a well-behaved
+// fleet sending every 60s with the default 120s timeout).
+const heartbeatDbUpdates = new Counter({
+  name: "syrotp_receiver_heartbeat_db_updates_total",
+  help: "Heartbeats accepted, split by whether the DB row was UPDATEd or coalesced.",
+  // Bounded enum: applied | skipped. No receiver_id label — keep cardinality flat.
+  labelNames: ["outcome"] as const,
   registers: [registry],
 });
 
@@ -162,6 +185,39 @@ const abuseBindingFailureRate = new Gauge({
 const abuseMinAppHealthScore = new Gauge({
   name: "syrotp_abuse_min_app_health_score",
   help: "Lowest per-app health score across all apps in the last hour. [0, 100], higher is healthier.",
+  registers: [registry],
+});
+
+// ----- matching invariants (v1.x FIX 6) ----------------------------
+//
+// The matching UPDATE is structured so it can claim at most one row
+// (single-row sub-SELECT + LIMIT 1 + FOR UPDATE SKIP LOCKED), and the
+// partial unique index `verifications_pending_uniq` makes a 2-row
+// claim impossible at the schema layer anyway. This counter exists
+// so that during the transition period (and forever after, as a
+// canary) we get a Prometheus signal the moment either guarantee is
+// violated. A non-zero value here means somebody has bypassed the
+// partial-unique index (e.g. by skipping migration 0006) or a future
+// refactor reintroduced the unbounded UPDATE.
+//
+// No high-cardinality labels — this is a screaming alert, not a
+// diagnostic dashboard.
+const matchingInvariantViolations = new Counter({
+  name: "syrotp_matching_invariant_violations_total",
+  help: "Matching UPDATE returned more than one row — invariant violation. Should be permanently zero.",
+  registers: [registry],
+});
+
+// Collision retries on the partial unique index during
+// startVerification — every retry costs a fresh `generateCode` and
+// another insert attempt. Non-zero counts here mean the code-space
+// is starting to feel crowded; alert if it grows.
+const verificationCodeCollisions = new Counter({
+  name: "syrotp_verification_code_collisions_total",
+  help: "startVerification code-generation collided with an existing pending row (caught by verifications_pending_uniq).",
+  // outcome: "retried" — collision was retried within budget.
+  //          "exhausted" — caller hit MAX_CODE_COLLISION_RETRIES and surfaced an error.
+  labelNames: ["outcome"] as const,
   registers: [registry],
 });
 
@@ -262,14 +318,39 @@ export const metrics = {
       | "inbound"
       | "verification_start_per_app"
       | "inbound_sms_per_app"
-      | "phone_binding_start_per_app",
+      | "phone_binding_start_per_app"
+      | "inbound_per_ip"
+      | "heartbeat_per_ip"
+      | "heartbeat_per_receiver"
+      // v1.0.1 — per-app buckets on the remaining sk_live_*-gated
+      // surface (cancel, webhook CRUD, binding read/revoke, WebAuthn).
+      // Operators disambiguate via the {bucket=...} label; the public
+      // API response stays uniform `rate_limited`.
+      | "verification_cancel_per_app"
+      | "webhook_crud_per_app"
+      | "phone_binding_read_per_app"
+      | "phone_binding_revoke_per_app"
+      | "webauthn_per_app",
   ): void {
     rateLimited.inc({ bucket });
+  },
+
+  // heartbeat DB-write coalescing (v1.0.1) — see counter definition above.
+  heartbeatDbUpdate(outcome: "applied" | "skipped"): void {
+    heartbeatDbUpdates.inc({ outcome });
   },
 
   // multi-receiver routing
   receiverSelected(match: "preferred" | "fallback" | "none"): void {
     receiverSelectedCounter.inc({ match });
+  },
+
+  // matching invariants (v1.x FIX 6)
+  matchingInvariantViolated(): void {
+    matchingInvariantViolations.inc();
+  },
+  verificationCodeCollision(outcome: "retried" | "exhausted"): void {
+    verificationCodeCollisions.inc({ outcome });
   },
 
   // abuse signals (v0.8 PR #39) — project-wide rollups

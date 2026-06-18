@@ -2,6 +2,7 @@
   "name": "@syrotp/loadtest",
   "version": "0.1.1",
   "private": true,
+  "license": "MIT",
   "description": "Load & reliability tooling for SYROTP. Black-box scenarios + acceptance gating.",
   "type": "module",
   "main": "src/index.ts",

@@ -2,7 +2,7 @@
   "name": "@syrotp/server",
   "version": "0.1.0",
   "private": true,
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
   "author": "Muhammed Sheko (SYR-ROOT)",
   "type": "module",
   "main": "dist/index.js",
@@ -40,6 +40,7 @@
     "postgres": "^3.4.5",
     "prom-client": "^15.1.3",
     "ulid": "^2.3.0",
+    "undici": "^6.19.8",
     "zod": "^3.23.8"
   },
   "devDependencies": {

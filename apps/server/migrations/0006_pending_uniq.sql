@@ -1,0 +1,61 @@
+-- v1.x FIX 6 — Partial unique index on pending verifications.
+--
+-- BACKGROUND
+-- ----------
+-- The inbound matcher in services/matching.ts claims a verification with
+--
+--   UPDATE verifications
+--   SET status = 'verified', ...
+--   WHERE receiver_id = $1
+--     AND phone_e164  = $2
+--     AND code        = $3
+--     AND status      = 'pending'
+--     AND expires_at  > now()
+--   RETURNING ...
+--
+-- Postgres has no implicit row-cap on UPDATE. If two concurrent pending
+-- verifications happen to share (receiver_id, phone_e164, code), the
+-- UPDATE flips BOTH to 'verified' and RETURNING returns both rows. The
+-- downstream code only consumes `claimed[0]` for the webhook + the
+-- inbound back-link, so the second row would be silently promoted to
+-- verified without ever firing a `verification.verified` event — a
+-- consistency hole.
+--
+-- The collision is extremely unlikely (code is a 6-char base-31 random
+-- string giving ~887M combinations, scoped to one (receiver, phone)
+-- with the per-phone pending cap), but unlikely is not "cannot happen",
+-- and it's cheaper to enforce the invariant at the schema layer than
+-- to defend at every read path. This index makes the collision a
+-- 23505 unique violation on INSERT instead of a silent double-claim.
+--
+-- The application-side companion to this migration:
+--   1. services/matching.ts ALSO refactors the claim to a single-row
+--      UPDATE (... WHERE id = (SELECT id ... LIMIT 1 FOR UPDATE
+--      SKIP LOCKED)) for belt-and-braces defense, and asserts
+--      claimed.length <= 1 with a Prometheus counter for any
+--      transition-period violations.
+--   2. services/verifications.ts catches 23505 on
+--      verifications_pending_uniq and retries with a fresh code (up
+--      to 3 attempts) before surfacing an error to the caller.
+--
+-- DATA NOTES
+-- ----------
+-- If any pre-existing pending rows already collide on
+-- (receiver_id, phone_e164, code), this migration will FAIL at index
+-- creation. That's the correct behavior — a colliding pending pair is
+-- exactly the bug this fix exists to prevent — but operators upgrading
+-- a live database should run the diagnostic query in the migration
+-- comment first:
+--
+--   SELECT receiver_id, phone_e164, code, COUNT(*)
+--   FROM verifications
+--   WHERE status = 'pending'
+--   GROUP BY 1, 2, 3
+--   HAVING COUNT(*) > 1;
+--
+-- If the query returns any rows, manually cancel or expire the older
+-- duplicates before applying this migration.
+
+CREATE UNIQUE INDEX "verifications_pending_uniq"
+  ON "verifications" ("receiver_id", "phone_e164", "code")
+  WHERE "status" = 'pending';

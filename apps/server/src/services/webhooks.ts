@@ -23,7 +23,7 @@ import { createHmac, randomBytes } from "node:crypto";
 import { config } from "../config.js";
 import { db, schema } from "../db/index.js";
 import { wrap } from "../lib/aead.js";
-import { ApiError, badRequest, notFound } from "../lib/errors.js";
+import { ApiError, badRequest, conflict, notFound } from "../lib/errors.js";
 import {
   newId,
   WEBHOOK_DELIVERY_PREFIX,
@@ -31,7 +31,19 @@ import {
   WEBHOOK_EVENT_PREFIX,
 } from "../lib/ids.js";
 import { maskPhone } from "../lib/phone.js";
+import { assertWebhookUrlSafe } from "../lib/ssrfGuard.js";
 import { metrics } from "./metrics.js";
+
+// Re-export so the route layer can map this without importing the lib directly.
+export { WebhookValidationError } from "../lib/ssrfGuard.js";
+
+/**
+ * Hard cap on the number of webhook endpoints per app. Stops a runaway
+ * caller (or a compromised secret key) from registering thousands of
+ * endpoints and using SYROTP as a fan-out reflector. Tune up if a
+ * legit operator needs more — but 10 is plenty for a single tenant.
+ */
+const MAX_ENDPOINTS_PER_APP = 10;
 
 // ----- closed event-type set -------------------------------------------
 
@@ -93,8 +105,24 @@ export interface CreateWebhookInput {
 export async function createWebhookEndpoint(
   input: CreateWebhookInput,
 ): Promise<WebhookEndpointWithSecret> {
-  validateUrl(input.url);
+  await validateUrl(input.url);
   const events = uniqueValidatedEventTypes(input.eventTypes);
+
+  // Per-app cap. Read once before insert — this is a soft race (two
+  // concurrent requests at count = N-1 could both succeed), but the
+  // limit is loose enough that the +1 overrun isn't a security issue;
+  // it's a guard against runaway / compromised-key fan-out, not a
+  // tight quota.
+  const existing = await db
+    .select({ id: schema.webhookEndpoints.id })
+    .from(schema.webhookEndpoints)
+    .where(eq(schema.webhookEndpoints.appId, input.appId));
+  if (existing.length >= MAX_ENDPOINTS_PER_APP) {
+    throw conflict(
+      "too_many_endpoints",
+      `app has reached the limit of ${MAX_ENDPOINTS_PER_APP} webhook endpoints`,
+    );
+  }
 
   const id = newId(WEBHOOK_ENDPOINT_PREFIX);
   const secret = generateWebhookSecret();
@@ -178,7 +206,7 @@ function toPublic(
 
 const URL_MAX = 2048;
 
-function validateUrl(value: string): void {
+async function validateUrl(value: string): Promise<void> {
   if (typeof value !== "string" || value.length === 0) {
     throw badRequest("validation_error", "url is required");
   }
@@ -199,6 +227,11 @@ function validateUrl(value: string): void {
   if (parsed.username || parsed.password) {
     throw badRequest("validation_error", "url must not include credentials");
   }
+  // SSRF guard: refuse loopback / RFC1918 / cloud-metadata / link-local
+  // targets, plus by-convention hostnames (localhost, *.local, *.internal).
+  // Throws WebhookValidationError on refusal so the route layer maps to
+  // 400 webhook_url_blocked (see routes/webhooks.ts).
+  await assertWebhookUrlSafe(parsed);
 }
 
 function uniqueValidatedEventTypes(input: unknown): VerificationEventType[] {

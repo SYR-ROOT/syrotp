@@ -17,8 +17,25 @@
  *   - operators won't accidentally weaken N/r/p with a typo
  *   - upgrading the algorithm is a versioned-prefix migration, which
  *     is the same tactic Django, Postgres, etc. use (algo:rest)
+ *
+ * Sync vs async:
+ *   - `hashAdminPassword` is sync — it runs once at provisioning
+ *     time via the `admin-password-hash` CLI, never on a request path.
+ *   - `verifyAdminPassword` is async (Promise<boolean>) — it sits on
+ *     the /admin/* request path. Each scrypt derivation costs ~50ms
+ *     of CPU, so running it on the main event loop (scryptSync) lets
+ *     a modest attack rate (~10-20 req/s) starve the entire server.
+ *     The async form hands the work to libuv's thread pool.
  */
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { randomBytes, scrypt, scryptSync, timingSafeEqual } from "node:crypto";
+import { promisify } from "node:util";
+
+const scryptAsync = promisify(scrypt) as (
+  password: string | Buffer,
+  salt: string | Buffer,
+  keylen: number,
+  options: { N: number; r: number; p: number; maxmem: number },
+) => Promise<Buffer>;
 
 // Tuned for ~50ms on a developer machine. Strong enough that an
 // attacker with a leaked .env can't trivially brute-force, while still
@@ -38,6 +55,9 @@ export function hashAdminPassword(password: string, saltHex?: string): string {
   // Operators can supply their own salt for deterministic hashing in
   // tests; production callers omit it and we generate a fresh one.
   const salt = saltHex ? Buffer.from(saltHex, "hex") : randomBytes(16);
+  // Sync is fine here — this function only runs at provisioning time
+  // through the `admin-password-hash` CLI (or in tests). It is NOT on
+  // any request path.
   const key = scryptSync(password, salt, SCRYPT_KEYLEN, {
     N: SCRYPT_N,
     r: SCRYPT_R,
@@ -47,7 +67,7 @@ export function hashAdminPassword(password: string, saltHex?: string): string {
   return `scrypt$${salt.toString("hex")}$${key.toString("hex")}`;
 }
 
-export function verifyAdminPassword(stored: string, candidate: string): boolean {
+export async function verifyAdminPassword(stored: string, candidate: string): Promise<boolean> {
   if (typeof stored !== "string" || typeof candidate !== "string") return false;
   const parts = stored.split("$");
   if (parts.length !== 3 || parts[0] !== "scrypt") return false;
@@ -60,9 +80,13 @@ export function verifyAdminPassword(stored: string, candidate: string): boolean 
   // Derive with the SAME parameters; a mismatch in length means the
   // stored hash was produced by a different algorithm version and
   // should be rejected without leaking which.
+  //
+  // Async scrypt offloads the derivation to libuv's thread pool so the
+  // main event loop stays responsive under sustained admin auth load
+  // (see the comment at the top of this file).
   let derived: Buffer;
   try {
-    derived = scryptSync(candidate, salt, expected.length, {
+    derived = await scryptAsync(candidate, salt, expected.length, {
       N: SCRYPT_N,
       r: SCRYPT_R,
       p: SCRYPT_P,

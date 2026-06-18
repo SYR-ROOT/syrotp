@@ -46,7 +46,7 @@ We do not use bcrypt/argon2 for API keys because the keys themselves are uniform
 - [ ] `NODE_ENV=production` (server refuses to boot with placeholder secrets in this mode).
 - [ ] PostgreSQL is reachable only from the server (private network or `127.0.0.1` bind).
 - [ ] Redis is reachable only from the server.
-- [ ] TLS terminates at a reverse proxy (nginx, Caddy, Cloudflare). `TRUST_PROXY=true` so `req.ip` reflects the real client.
+- [ ] TLS terminates at a reverse proxy (nginx, Caddy, Cloudflare). Set `TRUSTED_PROXIES` to the CIDR of the proxy (e.g. `10.0.0.0/8`) so `req.ip` reflects the real client. Production refuses to boot if `TRUST_PROXY=true` is set without a non-empty `TRUSTED_PROXIES` allowlist.
 - [ ] HSTS, `X-Content-Type-Options: nosniff`, and a strict CSP for any HTML are set at the proxy.
 - [ ] `CORS_ORIGINS` is an explicit allowlist, not `*`.
 - [ ] Database backups are encrypted at rest, and `audit_log` retention is at least 90 days.

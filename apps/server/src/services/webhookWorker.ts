@@ -28,15 +28,89 @@
  * pattern below keeps each tx short.
  */
 import { eq, inArray, sql } from "drizzle-orm";
+import { fetch as undiciFetch, type Dispatcher } from "undici";
 import { config } from "../config.js";
 import { db, schema } from "../db/index.js";
 import { unwrap } from "../lib/aead.js";
+import { buildSafeAgent, isBlockedIp } from "../lib/ssrfGuard.js";
 import { metrics } from "./metrics.js";
 import {
   MAX_DELIVERY_ATTEMPTS,
   nextRetryDelaySeconds,
   signDeliveryBody,
 } from "./webhooks.js";
+
+/**
+ * Process-wide SSRF-guarded dispatcher. Built lazily on first use so
+ * unit tests that swap `fetchImpl` never have to pay the agent cost.
+ * Shared across deliveries — undici pools sockets per-origin
+ * internally.
+ */
+let safeAgent: Dispatcher | null = null;
+function getSafeAgent(): Dispatcher {
+  if (!safeAgent) safeAgent = buildSafeAgent();
+  return safeAgent;
+}
+
+/**
+ * Per-delivery URL gate. Two layers of the SSRF guard run here:
+ *
+ *   1. Refuse non-http(s) protocols — a row whose URL was tampered
+ *      directly in the DB (post-validate) shouldn't be able to point
+ *      at `file://`, `gopher://`, etc.
+ *   2. Refuse IP-literal hosts in disallowed ranges. The agent-level
+ *      `lookup` hook would catch hostname-based attacks, but
+ *      `net.connect` skips that hook entirely when the host is
+ *      already an IP literal — so a row whose URL is
+ *      `http://169.254.169.254/...` would slip past the agent.
+ *
+ * Hostnames not covered here go on to the dispatcher's lookup hook
+ * (`buildSafeAgent`), which re-resolves and re-checks every connect.
+ * The test escape hatch (`WEBHOOK_ALLOW_PRIVATE_FOR_TESTS`) is honored
+ * by the dispatcher; here we always run the protocol + literal-IP
+ * check because the integration suite targets 127.0.0.1 directly and
+ * needs that path to remain open.
+ */
+function isUrlAllowedForDelivery(rawUrl: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return false;
+  }
+  const allowPrivate =
+    process.env.NODE_ENV === "test" &&
+    process.env.WEBHOOK_ALLOW_PRIVATE_FOR_TESTS === "true";
+  if (allowPrivate) return true;
+
+  const rawHost = parsed.hostname;
+  if (!rawHost) return false;
+  const host = rawHost.startsWith("[") && rawHost.endsWith("]")
+    ? rawHost.slice(1, -1)
+    : rawHost;
+  if (isBlockedIp(host)) return false;
+  return true;
+}
+
+/**
+ * Outbound fetch type the worker accepts. Tests can replace it with a
+ * stub that returns canned responses without touching the network.
+ * The signature is a subset of WHATWG fetch — we only need `url`,
+ * `init`, and a `Response`-shaped result with `status`.
+ */
+export type WebhookFetch = (
+  url: string,
+  init: {
+    method: string;
+    headers: Record<string, string>;
+    body: string;
+    signal: AbortSignal;
+    redirect: "manual";
+  },
+) => Promise<{ status: number }>;
 
 /**
  * Minimal structural logger interface — covers exactly what the
@@ -97,9 +171,15 @@ export class WebhookWorker {
   private running = false;
   private stopped = false;
   // Test seam: replace with a stub fetch that returns canned
-  // responses without touching the network. Defaults to global
-  // fetch (Node 18+).
-  public fetchImpl: typeof fetch = (...args) => fetch(...args);
+  // responses without touching the network. Defaults to an
+  // undici `fetch` wired to an SSRF-guarded dispatcher whose
+  // `connect.lookup` re-resolves the hostname per request and
+  // refuses RFC1918 / loopback / metadata addresses at TCP-connect
+  // time. That re-resolution defeats DNS rebinding: a hostname can
+  // pass create-time validation today and resolve to
+  // 169.254.169.254 tomorrow; this dispatcher catches that.
+  public fetchImpl: WebhookFetch = (url, init) =>
+    undiciFetch(url, { ...init, dispatcher: getSafeAgent() });
 
   constructor(private readonly log: WebhookWorkerLogger) {}
 
@@ -218,6 +298,21 @@ export class WebhookWorker {
       return { kind: "endpoint_disabled" };
     }
 
+    // SSRF defense-in-depth: refuse IP-literal URLs in disallowed ranges
+    // BEFORE we sign anything. `net.connect` skips the custom `lookup`
+    // option when the host is already an IP literal, so the agent-level
+    // guard wouldn't fire — we have to short-circuit here. Hostname
+    // URLs hit the dispatcher's lookup hook for the rebind-safe check.
+    if (!isUrlAllowedForDelivery(row.url)) {
+      metrics.webhookDeliveryFailure("bad_response");
+      return {
+        kind: "permanent",
+        reason: "bad_response",
+        statusCode: 0,
+        message: "url_blocked_by_ssrf_guard",
+      };
+    }
+
     let secret: string;
     try {
       secret = unwrap(config.MASTER_ENCRYPTION_KEY, row.secret_ciphertext, `webhook:${row.endpoint_id}`);
@@ -239,7 +334,7 @@ export class WebhookWorker {
     const signature = signDeliveryBody(secret, timestampSec, body);
 
     const t0 = performance.now();
-    let res: Response;
+    let res: { status: number };
     try {
       res = await this.fetchImpl(row.url, {
         method: "POST",

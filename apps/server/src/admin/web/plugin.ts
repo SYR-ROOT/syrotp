@@ -8,10 +8,18 @@
  *
  * If both are set:
  *   - all /admin/* routes require Basic Auth (HTTP 401 otherwise)
- *   - password compare goes through scrypt + timingSafeEqual
+ *   - password compare goes through async scrypt + timingSafeEqual,
+ *     so the ~50ms derivation runs on libuv's thread pool instead of
+ *     blocking the main event loop
  *   - usernames are constant-time-compared too
+ *   - a per-IP rate limit (10 attempts / 5 min by default — see
+ *     RATE_LIMIT_ADMIN_PER_IP_PER_5MIN) runs BEFORE basic-auth so
+ *     brute-forcers never reach the scrypt path
  *   - a strict CSP and a few hardening headers are set on every
- *     /admin response
+ *     /admin response, including 401 and 429 — applied via onSend
+ *     so they ride along with @fastify/basic-auth's auto-401 too
+ *   - the Basic Auth realm is a generic "Restricted" so phishing
+ *     prompts can't lean on a product-specific hint
  *   - no write actions exist in v0.3 PR 2 (read-only)
  */
 import type { FastifyInstance, FastifyReply } from "fastify";
@@ -22,6 +30,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { timingSafeEqual } from "node:crypto";
+import { config } from "../../config.js";
+import { rateLimited } from "../../lib/errors.js";
+import { rateCheck } from "../../services/rateLimit.js";
 import { verifyAdminPassword } from "./passwords.js";
 import {
   fetchHealth,
@@ -56,6 +67,28 @@ function resolveViewsDir(): string {
 // check matches config.ts, inlined here so the plugin's runtime
 // behavior matches its boot-time validation.
 const HASH_RE = /^scrypt\$[0-9a-fA-F]{16,128}\$[0-9a-fA-F]{32,256}$/;
+
+// 5-minute window for the per-IP admin rate limit. Hoisted as a
+// constant so the bucket math is obvious at the rateCheck call site.
+const ADMIN_RL_WINDOW_SECONDS = 5 * 60;
+
+// Hardening headers applied to EVERY /admin/* response — success, 401
+// from basic-auth, 429 from our rate limiter, and 5xx from the error
+// handler. Centralized so each header has exactly one definition.
+function applyHardeningHeaders(reply: FastifyReply): void {
+  reply.header("X-Frame-Options", "DENY");
+  reply.header("X-Content-Type-Options", "nosniff");
+  reply.header("Referrer-Policy", "no-referrer");
+  reply.header("Cache-Control", "no-store");
+  // No external resources, no scripts (server-rendered HTML + inline
+  // CSS only). `'unsafe-inline'` for style covers the inline <style>
+  // in _layout.eta; script-src is omitted, so default-src 'none'
+  // blocks all script execution.
+  reply.header(
+    "Content-Security-Policy",
+    "default-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'",
+  );
+}
 
 export const adminPlugin = fp(async function adminPlugin(app: FastifyInstance): Promise<void> {
   const user = process.env.ADMIN_USER ?? "";
@@ -96,41 +129,75 @@ export const adminPlugin = fp(async function adminPlugin(app: FastifyInstance): 
   // credentials" as a 500 through the global error handler.
   await app.register(async function adminScope(scope) {
     await scope.register(basicAuth, {
-      validate(username, password, _req, _reply, done) {
+      // Async form: scrypt is awaited so the ~50ms derivation runs on
+      // libuv's thread pool instead of blocking the main event loop.
+      // The constant-time-anti-username-oracle behavior is preserved:
+      // both compares ALWAYS run before the decision, regardless of
+      // which half failed first.
+      async validate(username, password, _req, _reply) {
         const userOk = compareUser(username);
-        const passOk = verifyAdminPassword(hash, password);
-        // Always run BOTH compares before deciding — defense against a
-        // username-existence timing oracle.
-        if (userOk && passOk) {
-          done();
-          return;
-        }
+        const passOk = await verifyAdminPassword(hash, password);
+        if (userOk && passOk) return;
         // Generic message so the response can't tell which half failed.
-        done(new Error("invalid credentials"));
+        throw new Error("invalid credentials");
       },
-      authenticate: { realm: "SYROTP admin" },
+      // Generic realm — a SYROTP-specific string would help a phishing
+      // page mimic the prompt convincingly. "Restricted" matches the
+      // RFC 7235 examples and reveals nothing about the product.
+      authenticate: { realm: "Restricted" },
     });
 
-    // Auth before every route in this scope.
-    scope.addHook("onRequest", scope.basicAuth);
+    // Hardening headers on EVERY response in this scope — success,
+    // 401 from basic-auth's auto-reject, 429 from the rate limiter,
+    // and any 5xx from the global error handler. onSend runs after
+    // the response status is decided but before it's flushed, which
+    // is the only place that catches all of them. We also set a
+    // sensible default Content-Type for HTML routes; JSON routes
+    // (e.g. /admin/abuse-signals) override it explicitly.
+    scope.addHook("onSend", async (_req, reply, payload) => {
+      applyHardeningHeaders(reply);
+      if (!reply.getHeader("Content-Type")) {
+        reply.header("Content-Type", "text/html; charset=utf-8");
+      }
+      return payload;
+    });
 
-    // Hardening headers on every response from this scope.
-    scope.addHook("preHandler", async (_req, reply) => {
-      reply
-        .header("Content-Type", "text/html; charset=utf-8")
-        .header("X-Frame-Options", "DENY")
-        .header("X-Content-Type-Options", "nosniff")
-        .header("Referrer-Policy", "no-referrer")
-        .header("Cache-Control", "private, no-store")
-        .header(
-          "Content-Security-Policy",
-          // No external resources, no scripts (server-rendered HTML +
-          // inline CSS only). `'unsafe-inline'` for style covers the
-          // inline <style> in _layout.eta; script-src is omitted, so
-          // default-src 'none' blocks all script execution.
-          "default-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'",
+    // Per-IP rate limit — runs BEFORE basic-auth so brute-forcers
+    // never reach the scrypt path. The bucket uses `req.ip`, which
+    // honors `trustProxy` (configured at app boot) — without it,
+    // req.ip is the socket peer address; with it, the leftmost
+    // untrusted X-Forwarded-For hop. Both are the right granularity
+    // for an attacker-distinguishing throttle. Fastify runs
+    // onRequest hooks in registration order, so this hook MUST be
+    // added before the `scope.basicAuth` hook a few lines below for
+    // the rate limit to gate the password compare.
+    scope.addHook("onRequest", async (req, reply) => {
+      const ip = req.ip;
+      const rl = await rateCheck(
+        `admin:ip:${ip}`,
+        config.RATE_LIMIT_ADMIN_PER_IP_PER_5MIN,
+        ADMIN_RL_WINDOW_SECONDS,
+      );
+      if (!rl.allowed) {
+        // Log but don't increment the syrotp_rate_limited_total
+        // counter — its label set is closed and admin auth isn't
+        // one of the documented buckets. Operators can track this
+        // in the access log if needed.
+        req.log.warn(
+          { ip, path: req.url, bucket: "admin", resetSeconds: rl.resetSeconds },
+          "admin rate limit exceeded",
         );
+        // Pre-apply hardening headers — the onSend hook will also
+        // apply them, but doing it here makes the intent obvious.
+        applyHardeningHeaders(reply);
+        throw rateLimited(rl.resetSeconds);
+      }
     });
+
+    // Auth before every route in this scope. Registered AFTER the
+    // rate-limit hook above so Fastify runs the rate-limit check
+    // first (onRequest hooks run in registration order).
+    scope.addHook("onRequest", scope.basicAuth);
 
     scope.get("/admin", async (_req, reply) => {
       const overview = await fetchOverview();
@@ -171,7 +238,6 @@ export const adminPlugin = fp(async function adminPlugin(app: FastifyInstance): 
       // on demand. The query is cheap and only runs once.
       const signals = getCachedSignals() ?? (await computeSignals());
       reply.header("Content-Type", "application/json; charset=utf-8");
-      reply.header("Cache-Control", "private, no-store");
       return signals;
     });
   });

@@ -99,7 +99,7 @@ strongly recommended but operationally adjustable.
 ### Network & TLS
 
 - [ ] **MUST** Terminate TLS in front of SYROTP. The server itself does not. A reverse proxy (nginx / Caddy / cloud LB) is the supported topology.
-- [ ] **MUST** Set `TRUST_PROXY=true` only when behind a proxy that strips `X-Request-Id` from untrusted callers; otherwise leave it `false`. The server only honours an upstream `X-Request-Id` when `TRUST_PROXY` is true.
+- [ ] **MUST** Set `TRUSTED_PROXIES` to the CIDR allowlist of upstream proxies whose `X-Forwarded-For` is trusted (e.g. `TRUSTED_PROXIES=10.0.0.0/8,127.0.0.1`). Leave empty when the server is directly Internet-facing. Production refuses to boot when `TRUST_PROXY=true` is set without a non-empty allowlist. The server ALWAYS generates `req.id` itself via `randomUUID()` — client-supplied `X-Request-Id` is stored only as `clientRequestId` for echo/audit and never poisons the log correlation.
 - [ ] **SHOULD** Restrict `/metrics` to the Prometheus scraper's IP at the proxy layer. The server intentionally does NOT enforce auth on `/metrics` — that's a deployment concern.
 - [ ] **SHOULD** Restrict `/admin/*` to operator IPs at the proxy layer in addition to Basic Auth.
 

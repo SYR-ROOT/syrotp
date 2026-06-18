@@ -1,34 +1,4 @@
-SYROTP — Syrian Reverse OTP Protocol
-====================================
-
-إِهْداء — Dedication
----------------------
-
-إِلَى أَرْوَاحِ شُهَدَاءِ سُورِيَا.
-بُنِيَ هَذَا الْبُرُوتُوكُولُ لِيَصِلَ صَوْتُهُمْ، حَتَّى حَيْثُ لَا تَصِلُ الرَّسَائِلُ.
-
-Dedicated to the souls of the martyrs of Syria.
-Built so their voice may reach — even where messages cannot.
-
-
-نِدَاءٌ أَخْلَاقِيٌّ — A Moral Appeal
---------------------------------------
-
-هَذَا الْبَرْنَامَجُ مَفْتُوحٌ لِلْجَمِيعِ بِلَا قَيْدٍ قَانُونِيٍّ. لَا نَطْلُبُ
-مِنْكَ شَيْئًا سِوَى أَنْ تَسْتَعْمِلَهُ فِي الْخَيْرِ: أَنْ تَحْمِيَ النَّاسَ،
-وَتَصِلَهُمْ، وَتَحْفَظَهُمْ — لَا أَنْ تُؤْذِيَ، أَوْ تُرَاقِبَ، أَوْ تُسْكِتَ
-أَحَدًا. هَذَا الْتِمَاسٌ، لَا شَرْطٌ؛ تَحْتَ رُخْصَةِ MIT لَكَ كَامِلُ الْحُرِّيَّةِ،
-وَنَحْنُ نَأْمُلُ أَنْ تَخْتَارَ مَا يَنْفَعُ.
-
-This software is given freely to everyone, without legal restriction. We ask
-only that you use it for good: to protect people, to connect them, to
-safeguard them — never to harm, surveil, or silence anyone. This is a
-request, not a requirement; under the MIT License you are free to do as you
-will, and we only hope you choose what helps.
-
-
 MIT License
------------
 
 Copyright (c) 2026 Muhammed Sheko (SYR-ROOT)
 
@@ -49,3 +19,11 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+---
+
+
+SYROTP is dedicated to the souls of the martyrs of Syria.
+إلى أرواح شهداء سوريا. See the repository root DEDICATION.md for the full
+dedication and the moral appeal that accompanies this release.

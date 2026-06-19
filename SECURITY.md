@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Please **do not** open public GitHub issues for security problems. Instead, email **security@syrotp.dev** (or the operator address listed in your self-hosted deployment's `SECURITY.md`). We aim to respond within 72 hours.
+Please **do not** open public GitHub issues for security problems. Instead, open a private security advisory at <https://github.com/SYR-ROOT/syrotp/security/advisories/new> (or use the operator address listed in your self-hosted deployment's `SECURITY.md`). We aim to respond within 72 hours.
 
 Coordinated disclosure: we ask for 90 days before public details are posted, or sooner once a fix is shipped.
 

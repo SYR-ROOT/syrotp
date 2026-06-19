@@ -34,6 +34,3 @@ tools/loadtest/reports/*
 
 # Local docker port overrides — per-developer, not part of the release
 docker-compose.override.yml
-
-# Local AI assistant state
-.claude/

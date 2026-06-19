@@ -89,7 +89,7 @@ registry.
   - Packagist `syrotp` vendor namespace
   - Sonatype `dev.syrotp` and `io.syrotp` group ids (Maven Central)
   - GitHub repository attestation (Swift Package Registry uses GitHub identity)
-  - pub.dev verified publisher `syrotp.dev` (or operator-owned domain)
+  - pub.dev verified publisher (operator-owned domain)
 - [ ] At least two maintainers with publish rights
 - [ ] MFA / 2FA enforced for every maintainer account where the registry supports it (npm: yes; PyPI: yes; Packagist: yes via GitHub login; Sonatype: hardware token; pub.dev: yes via Google account)
 - [ ] CI publishing token issued, scoped to **publish-only** (no admin / no delete)

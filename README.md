@@ -1,8 +1,8 @@
 # SYROTP — Syrian Reverse OTP Protocol
 
-> *إلى أرواح شهداء سوريا — بُني هذا البروتوكول ليصل صوتهم، حتى حيث لا تصل الرسائل.*
+> *إلى أرواح شهداء سوريا.*
 >
-> *Dedicated to the souls of the martyrs of Syria — built so their voice may reach, even where messages cannot.* See [`DEDICATION.md`](DEDICATION.md).
+> *To the souls of the martyrs of Syria.*
 
 > Reverse SMS verification for regions where outbound OTP delivery is
 > unreliable. Instead of sending an OTP **to** the user, the user sends a
@@ -266,8 +266,8 @@ for the spirit behind this release.
 ## Security
 
 For security disclosures, see [`SECURITY.md`](SECURITY.md). Report
-vulnerabilities to **security@syrotp.dev** — do not file public issues
-for security matters.
+vulnerabilities via a [private security advisory on GitHub](https://github.com/SYR-ROOT/syrotp/security/advisories/new) —
+do not file public issues for security matters.
 
 ---
 

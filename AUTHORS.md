@@ -12,9 +12,7 @@ and gateways are designed to be operated inside Syria with local
 SIM-card receivers, so end-user verifications never need to leave
 the country.
 
-The project is released as an ongoing charity (صَدَقَة جَارِيَة)
-dedicated to the souls of the martyrs of Syria. See
-[`DEDICATION.md`](DEDICATION.md).
+إلى أرواح شهداء سوريا. To the souls of the martyrs of Syria.
 
 ## Contact
 

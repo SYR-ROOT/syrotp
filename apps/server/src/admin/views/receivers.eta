@@ -1,6 +1,6 @@
 <h2>Receivers <span class="muted" style="font-weight:400; font-size: 13px;">(latest <%= it.rows.length %>)</span></h2>
 <% if (it.rows.length === 0) { %>
-  <p class="muted">No receivers yet. Run <span class="mono">orotp bootstrap</span> or <span class="mono">orotp receiver add</span>.</p>
+  <p class="muted">No receivers yet. Run <span class="mono">syrotp bootstrap</span> or <span class="mono">syrotp receiver add</span>.</p>
 <% } else { %>
 <table>
   <thead>

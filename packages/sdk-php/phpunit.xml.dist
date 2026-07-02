@@ -10,7 +10,7 @@
          failOnNotice="true"
          failOnDeprecation="true">
     <testsuites>
-        <testsuite name="orotp-sdk-php">
+        <testsuite name="syrotp-sdk-php">
             <directory>tests</directory>
         </testsuite>
     </testsuites>

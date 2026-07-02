@@ -581,7 +581,7 @@ eventual flip a config-level change, not a code change.
     single-org internal use, but reserves commercial resale, paid
     SaaS operation, rebranding, and offering the core as a paid
     OTP/verification service to **prior written permission from
-    Muhammed Sheko (SYR-ROOT)**.
+    Muhammed Shekho (SYR-ROOT)**.
   - SDKs (`packages/sdk-{js,python,kotlin,swift,php,php-laravel}`),
     UI components (`packages/{react,web-component,android-ui,
     flutter,swift-ui}`), the operator CLI (`packages/cli`), and
@@ -607,7 +607,7 @@ eventual flip a config-level change, not a code change.
 - **Per-package metadata** completed across every publishable:
   `description`, `keywords`, `repository` (with `directory` for
   monorepo subpaths), `homepage`, `bugs` / `support`, `author` /
-  `authors` (`Muhammed Sheko (SYR-ROOT)` — no email exposed in
+  `authors` (`Muhammed Shekho (SYR-ROOT)` — no email exposed in
   any published metadata; license-permission requests route via
   the GitHub profile + a tagged issue), `prepublishOnly` build
   hooks, license files inside each package's
@@ -657,7 +657,7 @@ eventual flip a config-level change, not a code change.
   `License :: OSI Approved :: MIT License` classifier was
   dropped — the Core License is source-available, not
   OSI-approved.
-- **`author` standardized** to `Muhammed Sheko (SYR-ROOT)`
+- **`author` standardized** to `Muhammed Shekho (SYR-ROOT)`
   across every publishable package's manifest (no email in any
   published metadata).
 

@@ -13,7 +13,7 @@ requires-python = ">=3.10"
 # PEP 639: SPDX expression instead of the legacy `{ text = "..." }` form.
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [{ name = "Muhammed Sheko (SYR-ROOT)" }]
+authors = [{ name = "Muhammed Shekho" }]
 keywords = ["otp", "sms", "verification", "syrotp", "reverse-otp", "sdk", "async", "fastapi", "django"]
 # PEP 639 supersedes license classifiers with the SPDX `license` field
 # above. setuptools 77+ rejects the combination of SPDX `license` and a

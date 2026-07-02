@@ -58,7 +58,7 @@
 <%~ it.body %>
 </main>
 <footer>
-  Powered by <a href="https://github.com/SYR-ROOT/orotp" rel="noopener noreferrer">OROTP</a>
+  Powered by <a href="https://github.com/SYR-ROOT/syrotp" rel="noopener noreferrer">SYROTP</a>
 </footer>
 </body>
 </html>

@@ -10,7 +10,7 @@
          failOnNotice="true"
          failOnDeprecation="true">
     <testsuites>
-        <testsuite name="orotp-sdk-php-laravel">
+        <testsuite name="syrotp-sdk-php-laravel">
             <directory>tests</directory>
             <exclude>tests/TestCase.php</exclude>
         </testsuite>

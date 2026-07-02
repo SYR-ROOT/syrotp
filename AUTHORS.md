@@ -2,7 +2,7 @@
 
 ## Founder
 
-**Muhammed Sheko**
+**Muhammed Shekho**
 Known as: **SYR-ROOT**
 
 SYROTP was created as an open-source technology project to help
@@ -18,6 +18,9 @@ the country.
 
 The project is reachable via GitHub:
 [`@SYR-ROOT`](https://github.com/SYR-ROOT).
+
+- Website: <https://mhd-shekho.com>
+- Email: <info@mhd-shekho.com>
 
 ## Contributors
 

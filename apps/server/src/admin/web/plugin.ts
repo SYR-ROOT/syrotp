@@ -22,7 +22,12 @@
  *     prompts can't lean on a product-specific hint
  *   - no write actions exist in v0.3 PR 2 (read-only)
  */
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type {
+  FastifyInstance,
+  FastifyReply,
+  FastifyRequest,
+  onRequestHookHandler,
+} from "fastify";
 import basicAuth from "@fastify/basic-auth";
 import { Eta } from "eta";
 import fp from "fastify-plugin";
@@ -134,7 +139,12 @@ export const adminPlugin = fp(async function adminPlugin(app: FastifyInstance): 
       // The constant-time-anti-username-oracle behavior is preserved:
       // both compares ALWAYS run before the decision, regardless of
       // which half failed first.
-      async validate(username, password, _req, _reply) {
+      async validate(
+        username: string,
+        password: string,
+        _req: FastifyRequest,
+        _reply: FastifyReply,
+      ) {
         const userOk = compareUser(username);
         const passOk = await verifyAdminPassword(hash, password);
         if (userOk && passOk) return;
@@ -197,7 +207,13 @@ export const adminPlugin = fp(async function adminPlugin(app: FastifyInstance): 
     // Auth before every route in this scope. Registered AFTER the
     // rate-limit hook above so Fastify runs the rate-limit check
     // first (onRequest hooks run in registration order).
-    scope.addHook("onRequest", scope.basicAuth);
+    // @fastify/basic-auth decorates the instance with `basicAuth`, but its
+    // `export =` CommonJS type augmentation isn't always picked up under this
+    // tsconfig's module-interop, so we access it through a typed view.
+    const basicAuthHook = (
+      scope as FastifyInstance & { basicAuth: onRequestHookHandler }
+    ).basicAuth;
+    scope.addHook("onRequest", basicAuthHook);
 
     scope.get("/admin", async (_req, reply) => {
       const overview = await fetchOverview();

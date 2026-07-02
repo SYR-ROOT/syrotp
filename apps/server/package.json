@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "author": "Muhammed Sheko (SYR-ROOT)",
+  "author": "Muhammed Shekho",
   "type": "module",
   "main": "dist/index.js",
   "exports": {

@@ -1,13 +1,13 @@
 [Unit]
-Description=OROTP GSM Modem Gateway
+Description=SYROTP GSM Modem Gateway
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=orotp-gateway
-Group=orotp-gateway
-ExecStart=/opt/orotp-gateway/venv/bin/orotp-gateway --config /etc/orotp-gateway/config.toml
+User=syrotp-gateway
+Group=syrotp-gateway
+ExecStart=/opt/syrotp-gateway/venv/bin/syrotp-gateway --config /etc/syrotp-gateway/config.toml
 Restart=always
 RestartSec=5
 
@@ -17,14 +17,14 @@ SupplementaryGroups=dialout
 
 # Persistent on-disk queue lives here. systemd creates the dir at start
 # with the right ownership.
-StateDirectory=orotp-gateway
+StateDirectory=syrotp-gateway
 StateDirectoryMode=0750
 
 # Hardening — the gateway only needs serial + network, nothing else.
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/var/lib/orotp-gateway
+ReadWritePaths=/var/lib/syrotp-gateway
 PrivateTmp=yes
 PrivateDevices=no
 DeviceAllow=/dev/ttyUSB0 rw

@@ -266,11 +266,13 @@ for the spirit behind this release.
 ## Security
 
 For security disclosures, see [`SECURITY.md`](SECURITY.md). Report
-vulnerabilities via a [private security advisory on GitHub](https://github.com/SYR-ROOT/syrotp/security/advisories/new) —
-do not file public issues for security matters.
+vulnerabilities via a [private security advisory on GitHub](https://github.com/SYR-ROOT/syrotp/security/advisories/new)
+or by email to <info@mhd-shekho.com> — do not file public issues for security matters.
 
 ---
 
 ## Maintainer
 
-**Muhammed Sheko — SYR-ROOT**
+**Muhammed Shekho — SYR-ROOT**
+
+Website: <https://mhd-shekho.com>

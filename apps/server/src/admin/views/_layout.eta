@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="referrer" content="no-referrer" />
 <meta name="robots" content="noindex,nofollow" />
-<title><%= it.title %> — OROTP admin</title>
+<title><%= it.title %> — SYROTP admin</title>
 <style>
   :root {
     color-scheme: light dark;
@@ -57,7 +57,7 @@
 <body>
 <header>
   <nav>
-    <h1>OROTP admin</h1>
+    <h1>SYROTP admin</h1>
     <a href="/admin" class="<%= it.active === 'dashboard' ? 'active' : '' %>">overview</a>
     <a href="/admin/receivers" class="<%= it.active === 'receivers' ? 'active' : '' %>">receivers</a>
     <a href="/admin/verifications" class="<%= it.active === 'verifications' ? 'active' : '' %>">verifications</a>

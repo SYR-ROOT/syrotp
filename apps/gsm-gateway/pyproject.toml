@@ -9,7 +9,7 @@ description = "SYROTP gateway for USB GSM modems (SIM800/SIM900/Quectel/Huawei).
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
-authors = [{ name = "Muhammed Sheko (SYR-ROOT)" }]
+authors = [{ name = "Muhammed Shekho" }]
 keywords = ["otp", "sms", "gsm", "gateway", "syrotp"]
 classifiers = [
   "License :: OSI Approved :: MIT License",

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "React component for the Syrian Reverse OTP Protocol verification flow",
   "license": "MIT",
-  "author": "Muhammed Sheko (SYR-ROOT)",
+  "author": "Muhammed Shekho",
   "homepage": "https://github.com/SYR-ROOT/syrotp/tree/main/packages/react#readme",
   "bugs": {
     "url": "https://github.com/SYR-ROOT/syrotp/issues"

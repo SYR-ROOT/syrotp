@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Server-side JavaScript / TypeScript SDK for the Syrian Reverse OTP Protocol",
   "license": "MIT",
-  "author": "Muhammed Sheko (SYR-ROOT)",
+  "author": "Muhammed Shekho",
   "homepage": "https://github.com/SYR-ROOT/syrotp/tree/main/packages/sdk-js#readme",
   "bugs": {
     "url": "https://github.com/SYR-ROOT/syrotp/issues"

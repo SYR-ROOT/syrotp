@@ -86,7 +86,7 @@ publishing {
                 developers {
                     developer {
                         id.set("syr-root")
-                        name.set("Muhammed Sheko (SYR-ROOT)")
+                        name.set("Muhammed Shekho")
                         url.set("https://github.com/SYR-ROOT")
                     }
                 }

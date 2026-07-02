@@ -194,7 +194,7 @@ export async function processInbound(input: MatchInput): Promise<MatchOutcome> {
             AND ${schema.verifications.phoneE164} = ${fromE164}
             AND ${schema.verifications.code} = ${code}
             AND ${schema.verifications.status} = 'pending'
-            AND ${schema.verifications.expiresAt} > ${serverNow}
+            AND ${schema.verifications.expiresAt} > ${serverNow.toISOString()}::timestamptz
           LIMIT 1
           FOR UPDATE SKIP LOCKED
         )`,

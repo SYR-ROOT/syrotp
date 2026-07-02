@@ -359,16 +359,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Laravel 11.x is currently unresolvable via default Composer: the
+        # entire 11.0–11.54 line is flagged by Packagist security advisories,
+        # so Composer refuses to install it and the resolve fails before any
+        # test runs. We test against Laravel 12 (the current release) on both
+        # supported PHP versions. Re-add an `11`/`9` row once the advisories
+        # clear or a non-flagged 11.x patch ships.
         include:
-          - php: "8.2"
-            laravel: "11"
-            testbench: "9"
           - php: "8.2"
             laravel: "12"
             testbench: "10"
-          - php: "8.3"
-            laravel: "11"
-            testbench: "9"
           - php: "8.3"
             laravel: "12"
             testbench: "10"

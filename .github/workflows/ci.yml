@@ -527,6 +527,11 @@ jobs:
           RATE_LIMIT_START_PER_IP_PER_MIN: 50000
           RATE_LIMIT_STATUS_PER_IP_PER_MIN: 50000
           RATE_LIMIT_INBOUND_PER_RECEIVER_PER_MIN: 50000
+          # Pre-HMAC per-IP inbound shedding (v1.x FIX 3). The loadtest
+          # drives ~1000 inbound off a single IP in ~12s, far above the
+          # 600/min default, so raise it here like the other buckets.
+          RATE_LIMIT_INBOUND_PER_IP_PER_MIN: 50000
+          RATE_LIMIT_HEARTBEAT_PER_RECEIVER_PER_MIN: 50000
           # v0.8 PR #38 per-app buckets — same overrides for the
           # smoke runner since the loadtest drives one app's traffic
           # off a single IP at high rates.

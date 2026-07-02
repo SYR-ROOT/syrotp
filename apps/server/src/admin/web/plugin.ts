@@ -275,6 +275,10 @@ async function renderPage(
     version: process.env.npm_package_version ?? "0.1.0",
     now: new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC",
   });
-  void reply;
+  // Set the HTML content-type at handler-return time. If we leave it to the
+  // onSend hook, Fastify has already stamped the string payload as
+  // `text/plain` by then and the hook's `if (!getHeader)` guard won't
+  // override it. JSON routes set their own type explicitly.
+  reply.type("text/html; charset=utf-8");
   return html;
 }

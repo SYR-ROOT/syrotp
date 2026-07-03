@@ -12,7 +12,10 @@ and gateways are designed to be operated inside Syria with local
 SIM-card receivers, so end-user verifications never need to leave
 the country.
 
-إلى أرواح شهداء سوريا. To the souls of the martyrs of Syria.
+هذا المشروع وَقفٌ تقنيّ، صدقةً جاريةً عن أرواح شهداء سوريا.
+This project is a technical *waqf* — a perpetual open-source endowment,
+given as an ongoing charity for the souls of the martyrs of Syria.
+See [`DEDICATION.md`](DEDICATION.md).
 
 ## Contact
 

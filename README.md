@@ -1,8 +1,12 @@
 # SYROTP — Syrian Reverse OTP Protocol
 
-> *إلى أرواح شهداء سوريا.*
+> **وَقفٌ تقنيّ، صدقةً جاريةً عن أرواح شهداء سوريا.**
 >
-> *To the souls of the martyrs of Syria.*
+> **A technical _waqf_ — a perpetual open-source endowment, given as an
+> ongoing charity for the souls of the martyrs of Syria.**
+>
+> *إلى أرواح شهداء سوريا. / To the souls of the martyrs of Syria.*
+> See [`DEDICATION.md`](DEDICATION.md).
 
 > Reverse SMS verification for regions where outbound OTP delivery is
 > unreliable. Instead of sending an OTP **to** the user, the user sends a
@@ -13,6 +17,7 @@
 ![status](https://img.shields.io/badge/status-v1.0.0-green)
 ![protocol](https://img.shields.io/badge/protocol-1.0.0%20frozen-blue)
 ![license](https://img.shields.io/badge/license-MIT-blue.svg)
+![waqf](https://img.shields.io/badge/%D9%88%D9%82%D9%81%20%D8%AA%D9%82%D9%86%D9%8A-technical%20waqf-brightgreen)
 
 ---
 

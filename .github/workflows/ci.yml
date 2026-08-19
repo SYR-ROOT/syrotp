@@ -62,6 +62,15 @@ jobs:
       - name: flutter pub get
         working-directory: packages/flutter
         run: flutter pub get
+      # `flutter pub get` rewrites the checked-in analysis_options.yaml files
+      # to match the toolchain's current lint set, which dirties the git tree.
+      # `pub publish --dry-run` then fails with "checked-in files are modified
+      # in git" (exit 65). Restore the committed versions so the dry-run sees a
+      # clean tree — we're validating the package as committed, not as mutated
+      # by the resolver.
+      - name: restore analysis_options after pub get
+        working-directory: packages/flutter
+        run: git checkout -- analysis_options.yaml example/analysis_options.yaml
       - name: flutter pub publish --dry-run
         working-directory: packages/flutter
         run: flutter pub publish --dry-run

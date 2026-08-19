@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The application theme.
+
+  MainActivity extends AppCompatActivity, which requires a Theme.AppCompat
+  descendant. With no theme declared the activity crashed on launch with
+  "You need to use a Theme.AppCompat theme (or descendant) with this activity",
+  so the gateway could be installed but never opened.
+-->
+<resources>
+  <style name="AppTheme" parent="Theme.MaterialComponents.DayNight.DarkActionBar" />
+</resources>

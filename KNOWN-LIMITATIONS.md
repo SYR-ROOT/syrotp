@@ -4,6 +4,15 @@ A frank list of what SYROTP doesn't do yet, and what it won't do by design.
 
 ## Platform
 
+- **The Android gateway had never been built from a clean checkout.** Four
+  things were missing or wrong and each stopped the build or the app: no
+  `gradle.properties` (AndroidX not enabled), no launcher icon, no theme (the
+  activity is an `AppCompatActivity` and crashed on launch), and an
+  unconditional `setIsStrongBoxBacked()` outside its own try/catch that crashed
+  pairing on any device whose framework lacks the method. All four are fixed;
+  the lesson is that nothing in CI compiles this module, so the next such
+  regression will also ship silently.
+
 - **iOS cannot run a receiver gateway.** Apple's sandbox does not permit
   programmatic SMS reading. iOS apps can still be **clients** of SYROTP via
   the SDK; they just can't be receivers.

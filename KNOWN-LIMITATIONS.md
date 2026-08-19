@@ -13,6 +13,14 @@ A frank list of what SYROTP doesn't do yet, and what it won't do by design.
   the lesson is that nothing in CI compiles this module, so the next such
   regression will also ship silently.
 
+- **A debug build could not reach a local server.** `usesCleartextTraffic` was
+  `false` for every variant, so `UploadWorker` retried forever against a
+  development server on `http://127.0.0.1` and no inbound SMS was ever
+  delivered. The documented workaround - hand-editing the production security
+  config - is the change most likely to be committed by accident. The debug
+  variant now ships its own config permitting cleartext to loopback only;
+  release is unchanged and still refuses cleartext everywhere.
+
 - **iOS cannot run a receiver gateway.** Apple's sandbox does not permit
   programmatic SMS reading. iOS apps can still be **clients** of SYROTP via
   the SDK; they just can't be receivers.

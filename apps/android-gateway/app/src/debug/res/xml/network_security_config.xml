@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DEBUG BUILDS ONLY. This file replaces the release config in the debug
+  variant and is never packaged into a release APK.
+
+  Production traffic still requires TLS: the base-config below is identical to
+  the release one. The single exception is loopback, which is how a gateway is
+  tested against a server on the developer's own machine over `adb reverse`.
+
+  Without this the debug build cannot be tested locally at all, and the
+  documented workaround - editing the production security config by hand - is
+  the one change most likely to be committed by accident.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <!-- The emulator's alias for the host machine. -->
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

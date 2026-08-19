@@ -14,6 +14,12 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1.0"
+
+        // Release default. The debug variant overrides this to "true" and
+        // ships a network security config permitting cleartext to loopback
+        // only, so a gateway can be tested against a local server without
+        // editing the production policy.
+        manifestPlaceholders["cleartext"] = "false"
     }
 
     buildFeatures {
@@ -37,6 +43,12 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            // The debug variant ships its own network security config
+            // (src/debug/res/xml) permitting cleartext to loopback only, so a
+            // gateway can be tested against a local server. The manifest sets
+            // usesCleartextTraffic="false" for release; debug must override it
+            // or the flag wins regardless of the config.
+            manifestPlaceholders["cleartext"] = "true"
         }
     }
 }

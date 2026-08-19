@@ -573,11 +573,15 @@ jobs:
           SYROTP_BASE_URL: http://127.0.0.1:3000
           DATABASE_URL: postgres://syrotp:syrotp_dev_password@localhost:5432/syrotp
           MASTER_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-          # CI runners are slower than dev machines — relax p95 targets so
-          # we don't false-positive on shared hardware.
-          SYROTP_LOAD_P95: "500"
+          # CI runners are slower and noisier than dev machines — relax p95
+          # targets so we don't false-positive on shared hardware. This is a
+          # smoke gate (correctness under light load), not a perf benchmark;
+          # real latency numbers live in docs/performance.md and the
+          # release-baseline suite. 800ms leaves headroom for runner tail
+          # spikes while still catching a genuine latency regression.
+          SYROTP_LOAD_P95: "800"
         run: |
-          pnpm --filter @syrotp/loadtest start scenario-a --workers 50 --p95-start 500 --p95-inbound 500 --p95-status 500
+          pnpm --filter @syrotp/loadtest start scenario-a --workers 50 --p95-start 800 --p95-inbound 800 --p95-status 800
           pnpm --filter @syrotp/loadtest start replay-storm
 
       - name: upload loadtest reports

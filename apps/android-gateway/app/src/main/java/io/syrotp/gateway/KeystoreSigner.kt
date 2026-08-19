@@ -66,19 +66,38 @@ class KeystoreSigner private constructor() {
         val baseProtection = KeyProtection.Builder(KeyProperties.PURPOSE_SIGN)
             .setDigests(KeyProperties.DIGEST_SHA256)
 
-        // Try StrongBox first; if the device doesn't expose one the import
-        // fails with StrongBoxUnavailableException and we re-import without
-        // the flag. Both branches still produce an AndroidKeyStore-resident
-        // key — just one with a stronger root of trust.
-        val protection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            baseProtection.setIsStrongBoxBacked(true).build()
-        } else {
+        // StrongBox is requested inside the try, not before it.
+        //
+        // Two defects made this path crash rather than fall back:
+        //
+        //   1. setIsStrongBoxBacked() was called OUTSIDE the try/catch written
+        //      to protect it, so a device whose framework lacks the method
+        //      threw before the fallback could run.
+        //   2. NoSuchMethodError is an Error, not an Exception, so
+        //      `catch (e: Exception)` could not have caught it even inside.
+        //
+        // Observed on a Galaxy Note 8 (Android 9, API 28): the SDK_INT guard
+        // passes and the method is still absent from the OEM framework. With
+        // minSdk 24 the same call is unconditional on API 24-27 as well, so
+        // pairing crashed on every device below P.
+        //
+        // The security floor is unchanged either way: the key is
+        // keystore-resident, not heap-resident. StrongBox only strengthens the
+        // root of trust when the hardware offers one.
+        val protection = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                baseProtection.setIsStrongBoxBacked(true).build()
+            } else {
+                baseProtection.build()
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "StrongBox unavailable on this device; using TEE only", t)
             baseProtection.build()
         }
 
         try {
             ks.setEntry(ALIAS, KeyStore.SecretKeyEntry(secret), protection)
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             // StrongBoxUnavailableException is a child of ProviderException
             // on most platforms but not on all — catch broadly and retry
             // without StrongBox. Other failures (lock-screen-bound import on
